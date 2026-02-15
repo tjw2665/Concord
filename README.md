@@ -96,7 +96,25 @@ To add app icons: `npm run tauri icon path/to/1024x1024.png`
 ### Build for Production
 
 ```powershell
-pnpm tauri build
+npm run build
+npm run tauri build   # if using Tauri
+```
+
+### Push to GitHub
+
+1. Create a new repository on [GitHub](https://github.com/new) (e.g. `AntiSurveillanceState`)
+2. Add the remote and push:
+
+```powershell
+git remote add origin https://github.com/YOUR_USERNAME/AntiSurveillanceState.git
+git push -u origin main
+```
+
+Or with SSH:
+
+```powershell
+git remote add origin git@github.com:YOUR_USERNAME/AntiSurveillanceState.git
+git push -u origin main
 ```
 
 ## Implementation Phases
