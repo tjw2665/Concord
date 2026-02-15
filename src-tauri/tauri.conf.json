@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run protocol:build && npm run bundle:sidecar && npm run build"
+    "beforeBuildCommand": "npm run protocol:build && npm run bundle:sidecar && npm run bundle:node && npm run build"
   },
   "app": {
     "security": {},
@@ -25,7 +25,7 @@
     "active": true,
     "targets": ["nsis"],
     "createUpdaterArtifacts": true,
-    "resources": ["p2p-sidecar-bundle.js"],
+    "resources": ["p2p-sidecar-bundle.js", "node.exe"],
     "icon": [],
     "windows": {
       "certificateThumbprint": null,

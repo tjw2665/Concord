@@ -110,9 +110,15 @@ fn start_sidecar(app: tauri::AppHandle) -> Result<(), String> {
         (script, root)
     };
 
-    let node = which::which("node").map_err(|_| {
-        "Node.js not found. Install Node.js for P2P networking.".to_string()
-    })?;
+    // Find Node.js: bundled node.exe next to the app first, then PATH
+    let bundled_node = exe_dir.join("node.exe");
+    let node = if bundled_node.exists() {
+        bundled_node
+    } else {
+        which::which("node").map_err(|_| {
+            "Node.js runtime not found. The bundled node.exe is missing and Node.js is not on PATH.".to_string()
+        })?
+    };
 
     let log_path = sidecar_log_path()?;
     let log_file =
