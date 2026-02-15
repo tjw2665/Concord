@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 
@@ -15,29 +15,33 @@ type UpdateState =
 export function UpdateChecker() {
   const [state, setState] = useState<UpdateState>({ phase: 'idle' });
   const [dismissed, setDismissed] = useState(false);
+  const isAutoCheckRef = useRef(true);
 
-  const checkForUpdate = useCallback(async () => {
-    setState({ phase: 'checking' });
+  const checkForUpdate = useCallback(async (silent = false) => {
+    if (!silent) setState({ phase: 'checking' });
     try {
       const update = await check();
       if (update) {
         setState({ phase: 'available', update });
-      } else {
+      } else if (!silent) {
         setState({ phase: 'up-to-date' });
-        // Auto-dismiss "up to date" after 4s
         setTimeout(() => setState({ phase: 'idle' }), 4000);
       }
     } catch (e: unknown) {
+      if (silent) {
+        // Auto-check: fail silently (no release published yet, network down, etc.)
+        console.log('[updater] Auto-check failed (silent):', e);
+        return;
+      }
       const msg = e instanceof Error ? e.message : String(e);
-      // Don't show network errors on auto-check — just go idle
       setState({ phase: 'error', message: msg });
       setTimeout(() => setState({ phase: 'idle' }), 6000);
     }
   }, []);
 
-  // Auto-check on mount (after a short delay so the app loads first)
+  // Auto-check on mount — silent (no UI if it fails or is up-to-date)
   useEffect(() => {
-    const timer = setTimeout(checkForUpdate, 5000);
+    const timer = setTimeout(() => checkForUpdate(true), 5000);
     return () => clearTimeout(timer);
   }, [checkForUpdate]);
 
