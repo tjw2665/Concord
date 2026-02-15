@@ -1,6 +1,6 @@
 {
   "name": "concord",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Decentralized instant messaging — Discord/Ventrilo/AIM style",
   "type": "module",

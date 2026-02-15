@@ -1,6 +1,6 @@
 [package]
 name = "concord"
-version = "0.2.0"
+version = "0.2.1"
 description = "Decentralized instant messaging"
 authors = ["Concord"]
 license = "MIT"
