@@ -1,5 +1,5 @@
 /**
- * P2P Sidecar — libp2p node with direct stream messaging
+ * P2P Sidecar — libp2p node with direct stream messaging + relay
  *
  * Communicates with the Tauri frontend via:
  *   stdin  <- JSON-line commands  (send, dial)
@@ -11,10 +11,15 @@
  *   - When receiving: read JSON from incoming streams, emit to frontend.
  *   No pub/sub. No gossip. Just direct delivery.
  *
+ * Relay:
+ *   Connects to the Concord relay on Fly.io for NAT traversal.
+ *   Registers for a short invite code (XXXX-XXXX) so peers can connect easily.
+ *
  * Environment:
  *   CONCORD_DATA_DIR — app data directory for persistent identity
  */
 import { createServer } from 'net';
+import https from 'https';
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -22,7 +27,7 @@ import { createInterface } from 'readline';
 import { networkInterfaces } from 'os';
 import { noise } from '@chainsafe/libp2p-noise';
 import { yamux } from '@chainsafe/libp2p-yamux';
-import { circuitRelayServer } from '@libp2p/circuit-relay-v2';
+import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
 import { identify } from '@libp2p/identify';
 import { webSockets } from '@libp2p/websockets';
 import { mdns } from '@libp2p/mdns';
@@ -38,6 +43,12 @@ const DEFAULT_CHANNEL = 'general';
 
 const DATA_DIR = process.env.CONCORD_DATA_DIR || join(__dirname, '..');
 const IDENTITY_PATH = join(DATA_DIR, 'node-identity.json');
+
+// ── Relay configuration ─────────────────────────────────────────
+const RELAY_HTTP_URL = 'https://concord-relay.fly.dev:8080';
+const RELAY_WS_ADDR = '/dns4/concord-relay.fly.dev/tcp/443/wss';
+// Invite code pattern: XXXX-XXXX
+const INVITE_CODE_RE = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/i;
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -58,6 +69,26 @@ function getLanIp() {
     }
   }
   return null;
+}
+
+// ── HTTP fetch helper (no external deps) ────────────────────────
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { timeout: 10000 }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (e) {
+          reject(new Error(`Invalid JSON from ${url}: ${body.slice(0, 200)}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout fetching ${url}`)); });
+  });
 }
 
 // ── Identity ─────────────────────────────────────────────────────
@@ -135,15 +166,21 @@ async function loadOrCreatePort() {
 async function createNode(port, privateKey) {
   return createLibp2p({
     privateKey,
-    addresses: { listen: [`/ip4/0.0.0.0/tcp/${port}/ws`] },
-    transports: [webSockets()],
+    addresses: {
+      listen: [
+        `/ip4/0.0.0.0/tcp/${port}/ws`,
+      ],
+    },
+    transports: [
+      webSockets(),
+      circuitRelayTransport({ discoverRelays: 1 }),
+    ],
     connectionEncrypters: [noise()],
     streamMuxers: [yamux()],
     connectionGater: { denyDialMultiaddr: () => false },
     peerDiscovery: [mdns()],
     services: {
       identify: identify(),
-      relay: circuitRelayServer({ reservations: { maxReservations: 128 } }),
     },
   });
 }
@@ -303,6 +340,41 @@ try {
 
   log(`Started. PeerId=${peerId} port=${actualPort} ephemeral=${isEphemeral}`);
 
+  // ── Connect to public relay ───────────────────────────────────
+  let inviteCode = null;
+  let relayPeerId = null;
+
+  async function connectToRelay() {
+    try {
+      log('Connecting to relay...');
+      // First get relay info to discover its PeerId
+      const info = await fetchJson(`${RELAY_HTTP_URL}/info`);
+      relayPeerId = info.relayPeerId;
+      log(`Relay PeerId: ${relayPeerId}`);
+
+      // Dial the relay WebSocket address
+      const relayAddr = `${RELAY_WS_ADDR}/p2p/${relayPeerId}`;
+      log(`Dialing relay: ${relayAddr}`);
+      await node.dial(multiaddr(relayAddr));
+      log('Connected to relay!');
+
+      // Register with the relay HTTP API to get an invite code
+      const reg = await fetchJson(`${RELAY_HTTP_URL}/register?peerId=${peerId}`);
+      inviteCode = reg.code;
+      log(`Invite code: ${inviteCode}`);
+
+      // Emit the invite code to the frontend
+      emit({ type: 'invite_code', code: inviteCode });
+    } catch (e) {
+      log(`Relay connection failed: ${e.message} (falling back to LAN only)`);
+      // Retry after a delay
+      setTimeout(connectToRelay, 15000);
+    }
+  }
+
+  // Start relay connection (non-blocking)
+  connectToRelay();
+
   // ── Peer events ────────────────────────────────────────────────
   node.addEventListener('peer:connect', (evt) => {
     const pid = evt.detail.toString();
@@ -314,6 +386,12 @@ try {
     const pid = evt.detail.toString();
     log(`Peer disconnected: ${pid}`);
     emit({ type: 'peer:disconnect', peerId: pid, peers: node.getPeers().map(String) });
+
+    // If relay disconnected, attempt reconnection
+    if (relayPeerId && pid === relayPeerId) {
+      log('Relay disconnected, attempting reconnection...');
+      setTimeout(connectToRelay, 5000);
+    }
   });
 
   node.addEventListener('peer:discovery', (evt) => {
@@ -354,6 +432,7 @@ try {
       listenAddrs: node.getMultiaddrs().map(String),
       connections: peerDetails,
       stats: { ...stats },
+      inviteCode,
     });
   }
   setInterval(emitNetStats, 5000);
@@ -366,6 +445,7 @@ try {
     lanAddress: lanAddr,
     port: actualPort,
     isEphemeral,
+    inviteCode,
   });
 
   // ── Stdin commands ─────────────────────────────────────────────
@@ -385,8 +465,31 @@ try {
 
         case 'dial': {
           const addr = (cmd.address || '').trim();
+
+          // Check if it's an invite code (XXXX-XXXX)
+          if (INVITE_CODE_RE.test(addr)) {
+            log(`Dial by invite code: ${addr}`);
+            try {
+              const lookup = await fetchJson(`${RELAY_HTTP_URL}/lookup?code=${encodeURIComponent(addr)}`);
+              if (!lookup.circuitAddr) {
+                emit({ type: 'dial_result', ok: false, address: addr, error: 'Code not found or expired' });
+                break;
+              }
+              log(`Resolved code ${addr} -> ${lookup.circuitAddr}`);
+              await node.dial(multiaddr(lookup.circuitAddr));
+              log(`Connected via invite code: ${addr}`);
+              emit({ type: 'dial_result', ok: true, address: addr, peers: node.getPeers().map(String) });
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              log(`Invite code dial failed: ${msg}`);
+              emit({ type: 'dial_result', ok: false, address: addr, error: msg });
+            }
+            break;
+          }
+
+          // Regular multiaddr dial
           if (!addr || !addr.startsWith('/')) {
-            emit({ type: 'dial_result', ok: false, address: addr, error: 'Invalid multiaddr' });
+            emit({ type: 'dial_result', ok: false, address: addr, error: 'Invalid address — use an invite code (XXXX-XXXX) or a multiaddr starting with /' });
             break;
           }
           try {

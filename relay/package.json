@@ -1,0 +1,18 @@
+{
+  "name": "concord-relay",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Lightweight libp2p circuit relay + invite code registry for Concord",
+  "scripts": {
+    "start": "node relay-server.js"
+  },
+  "dependencies": {
+    "@chainsafe/libp2p-noise": "^17.0.0",
+    "@chainsafe/libp2p-yamux": "^8.0.0",
+    "@libp2p/circuit-relay-v2": "^4.0.1",
+    "@libp2p/identify": "^4.0.1",
+    "@libp2p/websockets": "^10.0.1",
+    "libp2p": "^3.0.2"
+  }
+}

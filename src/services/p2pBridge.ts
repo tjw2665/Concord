@@ -19,6 +19,12 @@ export interface P2PReadyEvent {
   address: string;
   lanAddress: string | null;
   port: number;
+  inviteCode?: string | null;
+}
+
+export interface P2PInviteCodeEvent {
+  type: 'invite_code';
+  code: string;
 }
 
 export interface P2PMessageEvent {
@@ -54,6 +60,7 @@ export interface P2PLogEvent {
 
 export type P2PEvent =
   | P2PReadyEvent
+  | P2PInviteCodeEvent
   | P2PMessageEvent
   | P2PPeerEvent
   | P2PDialResultEvent

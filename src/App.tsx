@@ -23,6 +23,7 @@ export default function App() {
     connectedPeers,
     myAddress,
     lanAddress,
+    inviteCode,
     debugLog,
     netStats,
   } = useP2P(DEFAULT_CHANNEL);
@@ -66,6 +67,7 @@ export default function App() {
           myAddress={myAddress ?? undefined}
           lanAddress={lanAddress ?? undefined}
           peerId={peerId || undefined}
+          inviteCode={inviteCode ?? undefined}
           connectionError={error ?? undefined}
           onClearConnectionError={clearError}
           onOpenChat={() => setView('chat')}

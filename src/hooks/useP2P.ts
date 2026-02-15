@@ -40,6 +40,9 @@ function createMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
+// Invite code pattern: XXXX-XXXX
+const INVITE_CODE_RE = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/i;
+
 export function useP2P(channelId: string = DEFAULT_CHANNEL) {
   const [status, setStatus] = useState<'idle' | 'connecting' | 'ready' | 'error'>('idle');
   const [peerId, setPeerId] = useState<string>('');
@@ -48,6 +51,7 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
   const [connectedPeers, setConnectedPeers] = useState<string[]>([]);
   const [myAddress, setMyAddress] = useState<string | null>(null);
   const [lanAddress, setLanAddress] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [netStats, setNetStats] = useState<NetStats>({
     listenPort: null, listenAddrs: [], connections: [], stats: { sent: 0, sendFail: 0, recv: 0, recvFail: 0 },
@@ -109,11 +113,13 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
           setShortId(evt.peerId.slice(0, 16) + '...');
           setMyAddress(evt.address);
           setLanAddress(evt.lanAddress);
+          if (evt.inviteCode) setInviteCode(evt.inviteCode);
           setStatus('ready');
           setError(null);
           log(`P2P ready! PeerId: ${evt.peerId.slice(0, 16)}...`);
           log(`Local address: ${evt.address}`);
           if (evt.lanAddress) log(`LAN address: ${evt.lanAddress}`);
+          if (evt.inviteCode) log(`Invite code: ${evt.inviteCode}`);
 
           // Auto-reconnect known peers (once)
           if (!knownPeersReconnected) {
@@ -162,6 +168,11 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
         case 'peer:disconnect':
           setConnectedPeers(evt.peers ?? []);
           log(`Peer disconnected: ${evt.peerId.slice(0, 16)}...`);
+          break;
+
+        case 'invite_code':
+          setInviteCode((evt as any).code);
+          log(`Invite code received: ${(evt as any).code}`);
           break;
 
         case 'dial_result': {
@@ -236,18 +247,26 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
     [channelId, addMessage]
   );
 
-  // ── Connect to peer (manual) ───────────────────────────────────
+  // ── Connect to peer (manual — supports invite codes and multiaddrs) ───
   const connectToPeer = useCallback(
     async (addr: string) => {
       if (!addr?.trim()) return;
       const trimmed = addr.trim();
-      if (!trimmed.startsWith('/')) {
-        setError('Invalid address — must start with "/" (e.g. /ip4/...)');
+
+      // Accept invite codes (XXXX-XXXX) or multiaddrs (starts with /)
+      const isInviteCode = INVITE_CODE_RE.test(trimmed);
+      if (!isInviteCode && !trimmed.startsWith('/')) {
+        setError('Enter an invite code (e.g. ABCD-1234) or a multiaddr starting with "/"');
         return;
       }
+
       setError(null);
       try {
-        log(`Dialing peer: ${trimmed.slice(0, 50)}...`);
+        if (isInviteCode) {
+          log(`Connecting via invite code: ${trimmed}`);
+        } else {
+          log(`Dialing peer: ${trimmed.slice(0, 50)}...`);
+        }
         userDialsRef.current.add(trimmed);
         await bridgeDial(trimmed);
       } catch (e) {
@@ -272,6 +291,7 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
     connectedPeers,
     myAddress,
     lanAddress,
+    inviteCode,
     debugLog,
     netStats,
   };

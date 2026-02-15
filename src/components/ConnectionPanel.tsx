@@ -5,6 +5,7 @@ interface ConnectionPanelProps {
   myAddress?: string;
   lanAddress?: string;
   peerId?: string;
+  inviteCode?: string;
   onOpenChat: () => void;
   connectionError?: string;
   onClearConnectionError?: () => void;
@@ -18,6 +19,7 @@ export function ConnectionPanel({
   myAddress,
   lanAddress,
   peerId,
+  inviteCode,
   onOpenChat,
   connectionError,
   onClearConnectionError,
@@ -28,6 +30,7 @@ export function ConnectionPanel({
   const [peerAddr, setPeerAddr] = useState('');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleCopy = async (addr: string, field: string) => {
     await navigator.clipboard.writeText(addr);
@@ -58,7 +61,7 @@ export function ConnectionPanel({
           </h1>
         </div>
         <p className="text-concord-text-secondary text-center mb-8">
-          Connect to others. Copy your address, paste theirs.
+          Share your code. Paste theirs. Connect instantly.
         </p>
 
         {/* ── Initializing spinner ── */}
@@ -87,26 +90,42 @@ export function ConnectionPanel({
           </div>
         )}
 
-        {/* ── Ready state: show identity + address + peer connection ── */}
+        {/* ── Ready state ── */}
         {myAddress && (
           <div className="space-y-6">
-            {/* Stable Peer ID */}
-            {peerId && (
+
+            {/* ── Invite code (primary share method) ── */}
+            {inviteCode ? (
               <div>
-                <label className="text-xs font-medium text-concord-text-secondary uppercase tracking-wider block mb-1">
-                  Your Peer ID (stable across restarts)
+                <label className="text-base font-semibold text-concord-text-primary block mb-2 text-center">
+                  Your invite code — share this to connect
                 </label>
-                <div className="flex gap-2 items-center">
-                  <p className="flex-1 min-w-0 rounded-lg bg-concord-bg-tertiary px-3 py-2 text-concord-accent font-mono text-xs break-all select-text border border-[var(--border)]">
-                    {peerId}
-                  </p>
+                <div className="flex gap-3 items-center justify-center">
+                  <div className="rounded-2xl bg-concord-bg-tertiary px-6 py-4 border-2 border-concord-accent">
+                    <p className="text-concord-accent font-mono text-3xl font-bold tracking-widest select-text text-center">
+                      {inviteCode}
+                    </p>
+                  </div>
                   <button
-                    onClick={() => handleCopy(peerId, 'peerId')}
-                    className="px-3 py-2 rounded-lg bg-concord-bg-tertiary hover:bg-concord-bg-secondary border border-[var(--border)] text-xs font-medium text-concord-text-secondary shrink-0"
+                    onClick={() => handleCopy(inviteCode, 'invite')}
+                    className={`px-5 py-4 rounded-xl font-semibold text-sm whitespace-nowrap transition-colors ${
+                      copiedField === 'invite'
+                        ? 'bg-[var(--success)] text-white'
+                        : 'bg-concord-accent hover:bg-[var(--accent-hover)] text-white'
+                    }`}
                   >
-                    {copiedField === 'peerId' ? 'Copied!' : 'Copy'}
+                    {copiedField === 'invite' ? 'Copied!' : 'Copy'}
                   </button>
                 </div>
+              </div>
+            ) : (
+              <div className="rounded-lg bg-concord-accent/10 border border-concord-accent/30 px-4 py-3 text-center">
+                <p className="text-sm text-concord-accent font-medium">
+                  Connecting to relay...
+                </p>
+                <p className="text-xs text-concord-text-secondary mt-1">
+                  Your invite code will appear shortly. LAN connections still work.
+                </p>
               </div>
             )}
 
@@ -116,56 +135,14 @@ export function ConnectionPanel({
                 LAN auto-discovery is active
               </p>
               <p className="text-xs text-concord-text-secondary mt-1">
-                Peers on the same network are found automatically via mDNS. For remote connections, share your address below.
+                Peers on the same network are found automatically via mDNS.
               </p>
             </div>
 
-            {/* Local address */}
-            <div>
-              <label className="text-base font-semibold text-concord-text-primary block mb-2">
-                Your address — share this for remote connections
-              </label>
-              <div className="flex gap-2 items-start">
-                <div className="flex-1 min-w-0 rounded-xl bg-concord-bg-tertiary px-4 py-3 border-2 border-concord-accent">
-                  <p className="text-concord-text-primary font-mono text-base break-all select-text leading-relaxed">
-                    {myAddress}
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleCopy(myAddress, 'local')}
-                  className={`px-6 py-3 rounded-xl font-semibold text-sm whitespace-nowrap transition-colors ${
-                    copiedField === 'local'
-                      ? 'bg-[var(--success)] text-white'
-                      : 'bg-concord-accent hover:bg-[var(--accent-hover)] text-white'
-                  }`}
-                >
-                  {copiedField === 'local' ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-              {lanAddress && (
-                <div className="mt-2">
-                  <p className="text-xs text-concord-text-secondary mb-1">
-                    LAN address (for other machines on your network):
-                  </p>
-                  <div className="flex gap-2 items-start">
-                    <p className="flex-1 min-w-0 rounded-lg bg-concord-bg-tertiary px-3 py-2 text-concord-text-secondary font-mono text-xs break-all select-text">
-                      {lanAddress}
-                    </p>
-                    <button
-                      onClick={() => handleCopy(lanAddress, 'lan')}
-                      className="px-4 py-2 rounded-lg bg-concord-bg-tertiary hover:bg-concord-bg-secondary border border-[var(--border)] text-xs font-medium text-concord-text-secondary"
-                    >
-                      {copiedField === 'lan' ? 'Copied!' : 'Copy'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Peer address input */}
+            {/* ── Peer code / address input ── */}
             <div>
               <label className="text-sm font-medium text-concord-text-secondary block mb-2">
-                Paste their address to connect
+                Paste their code or address to connect
               </label>
               <div className="flex gap-2">
                 <input
@@ -173,7 +150,7 @@ export function ConnectionPanel({
                   value={peerAddr}
                   onChange={(e) => setPeerAddr(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleConnect(); }}
-                  placeholder="Paste address here..."
+                  placeholder="e.g. ABCD-1234 or /ip4/..."
                   disabled={connecting}
                   className="flex-1 rounded-xl bg-concord-bg-tertiary px-4 py-3 text-concord-text-primary placeholder-concord-text-secondary border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-concord-accent text-sm font-mono disabled:opacity-70"
                 />
@@ -185,6 +162,84 @@ export function ConnectionPanel({
                   {connecting ? 'Connecting...' : 'Connect'}
                 </button>
               </div>
+            </div>
+
+            {/* ── Advanced: full multiaddrs ── */}
+            <div>
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="text-xs text-concord-text-secondary hover:text-concord-text-primary flex items-center gap-1 transition-colors"
+              >
+                <svg
+                  className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-90' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                Advanced — full addresses
+              </button>
+
+              {showAdvanced && (
+                <div className="mt-3 space-y-3">
+                  {/* Peer ID */}
+                  {peerId && (
+                    <div>
+                      <label className="text-xs font-medium text-concord-text-secondary uppercase tracking-wider block mb-1">
+                        Peer ID
+                      </label>
+                      <div className="flex gap-2 items-center">
+                        <p className="flex-1 min-w-0 rounded-lg bg-concord-bg-tertiary px-3 py-2 text-concord-accent font-mono text-xs break-all select-text border border-[var(--border)]">
+                          {peerId}
+                        </p>
+                        <button
+                          onClick={() => handleCopy(peerId, 'peerId')}
+                          className="px-3 py-2 rounded-lg bg-concord-bg-tertiary hover:bg-concord-bg-secondary border border-[var(--border)] text-xs font-medium text-concord-text-secondary shrink-0"
+                        >
+                          {copiedField === 'peerId' ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Local address */}
+                  <div>
+                    <label className="text-xs font-medium text-concord-text-secondary uppercase tracking-wider block mb-1">
+                      Local address
+                    </label>
+                    <div className="flex gap-2 items-start">
+                      <p className="flex-1 min-w-0 rounded-lg bg-concord-bg-tertiary px-3 py-2 text-concord-text-secondary font-mono text-xs break-all select-text border border-[var(--border)]">
+                        {myAddress}
+                      </p>
+                      <button
+                        onClick={() => myAddress && handleCopy(myAddress, 'local')}
+                        className="px-3 py-2 rounded-lg bg-concord-bg-tertiary hover:bg-concord-bg-secondary border border-[var(--border)] text-xs font-medium text-concord-text-secondary shrink-0"
+                      >
+                        {copiedField === 'local' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* LAN address */}
+                  {lanAddress && (
+                    <div>
+                      <label className="text-xs font-medium text-concord-text-secondary uppercase tracking-wider block mb-1">
+                        LAN address
+                      </label>
+                      <div className="flex gap-2 items-start">
+                        <p className="flex-1 min-w-0 rounded-lg bg-concord-bg-tertiary px-3 py-2 text-concord-text-secondary font-mono text-xs break-all select-text border border-[var(--border)]">
+                          {lanAddress}
+                        </p>
+                        <button
+                          onClick={() => handleCopy(lanAddress, 'lan')}
+                          className="px-3 py-2 rounded-lg bg-concord-bg-tertiary hover:bg-concord-bg-secondary border border-[var(--border)] text-xs font-medium text-concord-text-secondary shrink-0"
+                        >
+                          {copiedField === 'lan' ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <button
