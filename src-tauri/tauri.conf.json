@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AntiSurveillanceState",
+  "version": "0.1.0",
+  "identifier": "com.antisurveillancestate.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AntiSurveillanceState",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "longDescription": "Decentralized instant messaging — no central servers, blockchain-anchored sync.",
+    "shortDescription": "Decentralized IM",
+    "category": "Social",
+    "copyright": "",
+    "license": "MIT"
+  },
+  "plugins": {}
+}
