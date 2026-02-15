@@ -1,10 +1,9 @@
-name: Build Windows
+name: Build & Release Windows
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -28,17 +27,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Tauri app
+      - name: Build and release Tauri app
         uses: tauri-apps/tauri-action@action-v0.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: npm run tauri --
-          args: ''
-          tagName: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('v0.1.0-build.{0}', github.run_number) || '' }}
-          releaseName: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('Concord (Build {0})', github.run_number) || '' }}
-          releaseBody: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Windows installer — built from main. Download the .exe below and run to install.' || '' }}
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Concord ${{ github.ref_name }}'
+          releaseBody: |
+            Concord ${{ github.ref_name }}
+
+            Download the `.exe` installer below to install or update.
+            The app will auto-update to future releases.
           releaseDraft: false
           prerelease: false
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: 'Concord-[version]-Windows-x64'
+          includeUpdaterJson: true

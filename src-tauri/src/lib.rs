@@ -74,30 +74,41 @@ fn start_sidecar(app: tauri::AppHandle) -> Result<(), String> {
         format!("start_sidecar called at {:?}\n", std::time::SystemTime::now()),
     );
 
-    // Find sidecar script by walking up from exe directory
+    // Find sidecar script:
+    // 1) Production: bundled "p2p-sidecar-bundle.js" next to the exe
+    // 2) Dev: walk up from exe directory looking for scripts/p2p-sidecar.js
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_dir = exe.parent().ok_or("no exe parent")?;
-    let sidecar_script = exe_dir
-        .ancestors()
-        .find_map(|dir| {
-            let script = dir.join("scripts").join("p2p-sidecar.js");
-            if script.exists() {
-                Some(script)
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| {
-            format!(
-                "Sidecar script (scripts/p2p-sidecar.js) not found. Searched from {} upward.",
-                exe_dir.display()
-            )
-        })?;
-    let project_root = sidecar_script
-        .parent()
-        .and_then(|p| p.parent())
-        .ok_or("invalid sidecar script path")?
-        .to_path_buf();
+
+    let bundled = exe_dir.join("p2p-sidecar-bundle.js");
+    let (sidecar_script, working_dir) = if bundled.exists() {
+        // Production: bundled file is next to the exe, use exe_dir as cwd
+        (bundled, exe_dir.to_path_buf())
+    } else {
+        // Dev: walk up from exe directory to find the project root
+        let script = exe_dir
+            .ancestors()
+            .find_map(|dir| {
+                let s = dir.join("scripts").join("p2p-sidecar.js");
+                if s.exists() {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| {
+                format!(
+                    "Sidecar script not found. Searched for p2p-sidecar-bundle.js in {} and scripts/p2p-sidecar.js upward.",
+                    exe_dir.display()
+                )
+            })?;
+        let root = script
+            .parent()
+            .and_then(|p| p.parent())
+            .ok_or("invalid sidecar script path")?
+            .to_path_buf();
+        (script, root)
+    };
 
     let node = which::which("node").map_err(|_| {
         "Node.js not found. Install Node.js for P2P networking.".to_string()
@@ -113,7 +124,7 @@ fn start_sidecar(app: tauri::AppHandle) -> Result<(), String> {
     let mut child = Command::new(&node)
         .arg(&sidecar_script)
         .env("CONCORD_DATA_DIR", data_dir.to_string_lossy().as_ref())
-        .current_dir(&project_root)
+        .current_dir(&working_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::from(log_file))
@@ -220,6 +231,8 @@ fn get_sidecar_log() -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // Auto-start the P2P sidecar when the app opens
             let handle = app.handle().clone();

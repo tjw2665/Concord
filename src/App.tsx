@@ -4,6 +4,7 @@ import { MessageInput } from './components/MessageInput';
 import { ChannelHeader } from './components/ChannelHeader';
 import { ConnectionPanel } from './components/ConnectionPanel';
 import { Sidebar } from './components/Sidebar';
+import { UpdateChecker } from './components/UpdateChecker';
 import { useP2P, DEFAULT_CHANNEL } from './hooks/useP2P';
 import { getSidecarLog } from './services/p2pBridge';
 
@@ -47,6 +48,7 @@ export default function App() {
 
   return (
     <div className="h-screen bg-concord-bg-primary text-concord-text-primary flex">
+      <UpdateChecker />
       <Sidebar
         p2pStatus={status}
         p2pError={error}
