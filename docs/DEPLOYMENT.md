@@ -1,27 +1,48 @@
-# AntiSurveillanceState — Deployment & Distribution
+# Concord — Deployment & Distribution
 
 ## Build Targets
 
 | Platform | Output | Notes |
 |----------|--------|-------|
-| Windows | `.msi`, `.exe` | NSIS installer; portable exe |
+| Windows | `*-setup.exe` | NSIS installer, **self-contained** (WebView2 bundled) |
 | macOS | `.dmg`, `.app` | Universal binary (arm64 + x64) |
 | Linux | `.deb`, `.AppImage` | AppImage for distro-agnostic |
+
+## Windows Self-Contained Build
+
+The Windows build is configured for **offline distribution**:
+
+- **WebView2**: Bundled via `embedBootstrapper` (~1.8MB) — downloads runtime if needed on first run
+- **Output**: `src-tauri/target/release/bundle/nsis/Concord_0.1.0_x64-setup.exe`
+- **Single file**: Users download the .exe, run it, install — no Node.js or other deps
+
+```powershell
+npm run tauri:build
+```
 
 ## Build Commands
 
 ```powershell
 # Development
-pnpm tauri dev
+npm run tauri:dev
 
-# Production build (all platforms from current OS)
-pnpm tauri build
+# Production build (Windows NSIS, self-contained)
+npm run tauri:build
 
 # Platform-specific
-pnpm tauri build --target x86_64-pc-windows-msvc
-pnpm tauri build --target aarch64-apple-darwin
-pnpm tauri build --target x86_64-unknown-linux-gnu
+npm run tauri:build -- --target x86_64-pc-windows-msvc
+npm run tauri:build -- --target aarch64-apple-darwin
+npm run tauri:build -- --target x86_64-unknown-linux-gnu
 ```
+
+## CI/CD (GitHub Actions)
+
+The build pipeline (`.github/workflows/build-windows.yml`) runs on:
+- Push to `main`
+- Pull requests to `main`
+- Manual trigger (`workflow_dispatch`)
+
+Artifacts are uploaded to each run. Download from **Actions** → select run → **Artifacts**.
 
 ## Distribution
 

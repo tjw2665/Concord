@@ -1,4 +1,4 @@
-# AntiSurveillanceState — Decentralized IM Architecture
+# Concord — Decentralized IM Architecture
 
 A highly decentralized instant messaging platform inspired by Discord, Ventrilo, and AIM. Messages sync via blockchain-anchored DAG structures; no central servers required.
 
@@ -8,7 +8,7 @@ A highly decentralized instant messaging platform inspired by Discord, Ventrilo,
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         ANTI-SURVEILLANCE STATE (ASS)                             │
+│                              CONCORD                                              │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
 │   ┌──────────────┐     libp2p      ┌──────────────┐     libp2p     ┌──────────┐ │
@@ -183,7 +183,7 @@ interface Channel {
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  [Logo] AntiSurveillanceState          [Identity] [Settings]    │
+│  [Logo] Concord          [Identity] [Settings]    │
 ├──────────┬──────────────────────────────────────────────────────┤
 │          │  # general                              [Members]      │
 │ Servers  │  ─────────────────────────────────────────────────   │
@@ -209,7 +209,7 @@ interface Channel {
 ## 6. Project Structure
 
 ```
-AntiSurveillanceState/
+Concord/
 ├── src-tauri/                 # Tauri (Rust) backend
 │   ├── src/
 │   │   ├── lib.rs
@@ -297,4 +297,4 @@ AntiSurveillanceState/
 
 ---
 
-*Document version: 1.0 — AntiSurveillanceState Architecture*
+*Document version: 1.0 — Concord Architecture*

@@ -16,7 +16,7 @@ export function ChannelHeader({
       ? 'text-[var(--success)]'
       : status === 'error'
         ? 'text-[var(--danger)]'
-        : 'text-ass-text-secondary';
+        : 'text-concord-text-secondary';
 
   const statusText =
     status === 'ready'
@@ -28,14 +28,14 @@ export function ChannelHeader({
           : 'Connect to relay above';
 
   return (
-    <header className="h-12 flex-shrink-0 border-b border-[var(--border)] px-4 flex items-center justify-between bg-ass-bg-primary">
+    <header className="h-12 flex-shrink-0 border-b border-[var(--border)] px-4 flex items-center justify-between bg-concord-bg-primary">
       <div className="flex items-center gap-3">
         <span className="font-semibold text-lg"># {channelName}</span>
         <span className={`text-sm ${statusColor}`} title={statusText}>
           ● {statusText}
         </span>
       </div>
-      <div className="text-xs text-ass-text-secondary" title={shortId}>
+      <div className="text-xs text-concord-text-secondary" title={shortId}>
         You: {shortId}
       </div>
     </header>

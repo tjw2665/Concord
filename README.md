@@ -1,4 +1,4 @@
-# AntiSurveillanceState
+# Concord
 
 A **highly decentralized** instant messaging application inspired by Discord, Ventrilo, and AIM. Messages sync via blockchain-anchored DAG structures—no central servers required.
 
@@ -42,7 +42,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 ## Project Structure
 
 ```
-AntiSurveillanceState/
+Concord/
 ├── src-tauri/          # Rust backend (identity, sync, P2P)
 ├── src/                # React frontend
 ├── packages/
@@ -58,37 +58,66 @@ AntiSurveillanceState/
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) (optional, for Tauri desktop build)
+- [Rust](https://rustup.rs/) (for Tauri desktop app)
 
 ### Setup
 
 ```powershell
 # Install dependencies
-cd AntiSurveillanceState
+cd Concord
 npm install
 
 # Build protocol package
 cd packages/protocol && npm run build && cd ../..
+```
 
-# Run relay (Terminal 1)
+### Test the Full Desktop App (not browser)
+
+```powershell
+# Terminal 1: Start relay (picks a random port, saves to relay-config.json)
 npm run relay
 
-# Run dev server (Terminal 2)
-npm run dev
+# Terminal 2: Run the Tauri desktop app
+npm run tauri:dev
 ```
+
+The app opens in a **native window**. For firewall and port setup, see [docs/FIREWALL_AND_PORTS.md](docs/FIREWALL_AND_PORTS.md).
 
 ### Testing P2P Messaging
 
-1. **Start relay**: `npm run relay` — copy the multiaddr (e.g. `/ip4/127.0.0.1/tcp/52072/ws/p2p/...`)
-2. **Open first tab**: `http://localhost:5173` — paste relay addr, click "Connect Relay"
-3. **Copy your address**: After connecting, copy the address shown (for others to dial you)
-4. **Open second tab**: Same URL — connect to relay, then paste Tab 1's address, click "Dial Peer"
-5. **Send messages**: Both tabs are on #general — messages sync via GossipSub
+**Same machine (2 tabs):**
+1. `npm run relay` — copy the Local address
+2. Tab 1: paste relay addr → Connect to relay → Copy your address
+3. Tab 2: paste relay addr → Connect → paste Tab 1's address → Connect to peer
+4. Send messages — they sync
 
-### Tauri Desktop
+**Remote user (hub mode):**
+1. **Hub**: Run `npm run relay` — port is saved in `scripts/relay-config.json`
+2. **Hub**: Allow the relay port in Windows Firewall; port-forward it in your router (see [docs/FIREWALL_AND_PORTS.md](docs/FIREWALL_AND_PORTS.md))
+3. **Hub**: Edit `src/config.ts` — paste the Local address from relay output
+4. **Hub**: Share the Remote address (with your public IP) with the other user
+5. **Remote user**: Paste that address → Connect to relay → Share your address with hub
+6. **Hub**: Paste remote user's address → Connect to peer
+
+### Run the Full Desktop App (Tauri)
+
+**Development** (native window, hot-reload):
 
 ```powershell
+# Terminal 1: Relay
+npm run relay
+
+# Terminal 2: Desktop app
 npm run tauri:dev
+```
+
+This opens the app in a **native Tauri window** (not a browser tab).
+
+**Production** (built executable):
+
+```powershell
+npm run tauri:build
+# Run: src-tauri/target/release/bundle/nsis/Concord_0.1.0_x64-setup.exe
 ```
 
 To add app icons: `npm run tauri icon path/to/1024x1024.png`
@@ -97,23 +126,48 @@ To add app icons: `npm run tauri icon path/to/1024x1024.png`
 
 ```powershell
 npm run build
-npm run tauri build   # if using Tauri
 ```
+
+### Windows Executable (Self-Contained)
+
+Build a downloadable Windows installer that includes the WebView2 runtime (no internet required to run):
+
+```powershell
+# On Windows only — requires Rust and Visual Studio Build Tools
+npm run tauri:build
+```
+
+**Output:** `src-tauri/target/release/bundle/nsis/Concord_0.1.0_x64-setup.exe`
+
+- **Smaller installer**: WebView2 bootstrapper bundled (~1.8MB) — downloads runtime if needed on first run
+- **Single executable**: Users download the .exe, run it, and install
+- **No Node.js or other dependencies** required on the target machine
+
+To add a custom app icon before building: `npm run tauri icon path/to/1024x1024.png`
+
+### GitHub Actions Build Pipeline
+
+A workflow builds the Windows installer on every push to `main`:
+
+- **Triggers**: Push to `main`, pull requests (build only), or manual run
+- **Download**: Go to your repo's **Releases** page — each push to `main` creates a new release with the `.exe` attached
+- **Artifacts**: Also available from **Actions** → select run → **Artifacts**
+- **Config**: `.github/workflows/build-windows.yml`
 
 ### Push to GitHub
 
-1. Create a new repository on [GitHub](https://github.com/new) (e.g. `AntiSurveillanceState`)
+1. Create a new repository on [GitHub](https://github.com/new) (e.g. `Concord`)
 2. Add the remote and push:
 
 ```powershell
-git remote add origin https://github.com/YOUR_USERNAME/AntiSurveillanceState.git
+git remote add origin https://github.com/YOUR_USERNAME/Concord.git
 git push -u origin main
 ```
 
 Or with SSH:
 
 ```powershell
-git remote add origin git@github.com:YOUR_USERNAME/AntiSurveillanceState.git
+git remote add origin git@github.com:YOUR_USERNAME/Concord.git
 git push -u origin main
 ```
 

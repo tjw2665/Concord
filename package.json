@@ -1,5 +1,5 @@
 {
-  "name": "antisurveillancestate",
+  "name": "concord",
   "version": "0.1.0",
   "private": true,
   "description": "Decentralized instant messaging — Discord/Ventrilo/AIM style",
@@ -15,23 +15,24 @@
     "protocol:build": "cd packages/protocol && npm run build"
   },
   "dependencies": {
-    "@antisurveillancestate/protocol": "file:./packages/protocol",
-    "@chainsafe/libp2p-gossipsub": "^14.0.0",
     "@chainsafe/libp2p-noise": "^17.0.0",
     "@chainsafe/libp2p-yamux": "^8.0.0",
+    "@concord/protocol": "file:./packages/protocol",
     "@libp2p/circuit-relay-v2": "^4.0.1",
     "@libp2p/identify": "^4.0.1",
+    "@libp2p/mdns": "^12.0.11",
     "@libp2p/webrtc": "^6.0.3",
     "@libp2p/websockets": "^10.0.1",
+    "@multiformats/multiaddr": "^13.0.1",
     "@noble/ed25519": "^2.1.0",
+    "@tanstack/react-query": "^5.17.0",
+    "@tanstack/react-virtual": "^3.0.0",
     "@tauri-apps/api": "^2.0.0",
     "libp2p": "^3.0.2",
     "react": "^19.0.0",
-    "uint8arrays": "^5.0.0",
     "react-dom": "^19.0.0",
-    "zustand": "^4.5.0",
-    "@tanstack/react-query": "^5.17.0",
-    "@tanstack/react-virtual": "^3.0.0"
+    "uint8arrays": "^5.0.0",
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

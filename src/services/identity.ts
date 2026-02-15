@@ -5,7 +5,7 @@
 import * as ed from '@noble/ed25519';
 import { fromString, toString } from 'uint8arrays';
 
-const STORAGE_KEY = 'ass-identity';
+const STORAGE_KEY = 'concord-identity';
 
 let cachedKeypair: { publicKey: string; privateKey: string } | null = null;
 

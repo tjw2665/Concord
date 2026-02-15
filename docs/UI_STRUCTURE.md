@@ -1,10 +1,10 @@
-# AntiSurveillanceState — UI Structure & Components
+# Concord — UI Structure & Components
 
 ## Layout (Discord-like)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  [Logo] AntiSurveillanceState                    [Identity] [Settings] [─□×] │
+│  [Logo] Concord                    [Identity] [Settings] [─□×] │
 ├────────────┬────────────────────────────────────────────────────────────────┤
 │            │  # general                                    [Members] [Search]│
 │  Servers   │  ─────────────────────────────────────────────────────────────  │

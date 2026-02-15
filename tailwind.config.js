@@ -5,13 +5,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        'ass-bg': {
+        'concord-bg': {
           primary: '#313338',
           secondary: '#2b2d31',
           tertiary: '#1e1f22',
         },
-        'ass-accent': '#5865f2',
-        'ass-text': {
+        'concord-accent': '#5865f2',
+        'concord-text': {
           primary: '#f2f3f5',
           secondary: '#b5bac1',
         },

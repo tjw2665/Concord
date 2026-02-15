@@ -1,5 +1,5 @@
 /**
- * AntiSurveillanceState — Shared Protocol Types
+ * Concord — Shared Protocol Types
  * Used by frontend, Tauri backend, and sync layer
  */
 

@@ -1,9 +1,13 @@
 /**
  * Message store — Zustand store for channel messages
+ *
+ * Persisted to localStorage. Safe for multi-instance because each
+ * instance uses its sidecar PeerId as the message authorId, so
+ * "isMe" checks never mis-identify messages from another instance.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Message } from '@antisurveillancestate/protocol';
+import type { Message } from '@concord/protocol';
 
 interface MessageState {
   messages: Record<string, Message[]>;
@@ -48,6 +52,6 @@ export const useMessageStore = create<MessageState>()(
         });
       },
     }),
-    { name: 'ass-messages', partialize: (s) => ({ messages: s.messages }) }
+    { name: 'concord-messages', partialize: (s) => ({ messages: s.messages }) }
   )
 );

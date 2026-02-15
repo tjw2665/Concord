@@ -1,144 +1,200 @@
 import { useState } from 'react';
 
 interface ConnectionPanelProps {
-  onConnectRelay: (relayAddr: string) => void;
   onDialPeer: (peerAddr: string) => void;
   myAddress?: string;
-  defaultRelayAddr?: string;
+  lanAddress?: string;
+  peerId?: string;
+  onOpenChat: () => void;
+  connectionError?: string;
+  onClearConnectionError?: () => void;
+  peerCount?: number;
+  overallStatus?: string;
+  p2pStatus?: string;
 }
 
 export function ConnectionPanel({
-  onConnectRelay,
   onDialPeer,
   myAddress,
-  defaultRelayAddr,
+  lanAddress,
+  peerId,
+  onOpenChat,
+  connectionError,
+  onClearConnectionError,
+  peerCount = 0,
+  overallStatus = '',
+  p2pStatus = 'idle',
 }: ConnectionPanelProps) {
-  const [relayAddr, setRelayAddr] = useState(defaultRelayAddr ?? '');
   const [peerAddr, setPeerAddr] = useState('');
-  const [showHelp, setShowHelp] = useState(true);
-  const [copied, setCopied] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
 
-  const handleCopy = async () => {
-    if (!myAddress) return;
-    await navigator.clipboard.writeText(myAddress);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async (addr: string, field: string) => {
+    await navigator.clipboard.writeText(addr);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
   };
 
+  const handleConnect = async () => {
+    if (!peerAddr.trim()) return;
+    setConnecting(true);
+    try {
+      await onDialPeer(peerAddr.trim());
+      setPeerAddr('');
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const isInitializing = p2pStatus === 'idle' || p2pStatus === 'connecting';
+
   return (
-    <div className="border-b border-[var(--border)] bg-ass-bg-secondary">
-      <div className="p-4 space-y-4">
-        {/* Quick testing banner */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-ass-text-primary">
-            Testing setup
-          </span>
-          <button
-            onClick={() => setShowHelp(!showHelp)}
-            className="text-sm text-ass-accent hover:underline"
-          >
-            {showHelp ? 'Hide' : 'Show'} instructions
-          </button>
+    <div className="flex-1 flex flex-col items-center justify-center p-8 min-h-0">
+      <div className="w-full max-w-md">
+        <div className="flex flex-col items-center mb-2">
+          <img src="/Concord_Logo.png" alt="Concord" className="h-12 w-auto mb-3" />
+          <h1 className="text-2xl font-bold text-concord-text-primary">
+            Concord
+          </h1>
         </div>
+        <p className="text-concord-text-secondary text-center mb-8">
+          Connect to others. Copy your address, paste theirs.
+        </p>
 
-        {showHelp && (
-          <div className="rounded-lg bg-ass-bg-tertiary p-4 text-sm text-ass-text-secondary space-y-3">
-            <p className="font-medium text-ass-text-primary">Quick start (2 tabs)</p>
-            <ol className="list-decimal list-inside space-y-2">
-              <li>
-                Run <code className="bg-ass-bg-primary px-1.5 py-0.5 rounded">npm run relay</code> in a terminal
-              </li>
-              <li>
-                Copy the relay address from the terminal (e.g. <code className="text-ass-accent">/ip4/127.0.0.1/tcp/12345/ws/p2p/...</code>)
-              </li>
-              <li>
-                Paste below → <strong>Connect to relay</strong>
-              </li>
-              <li>
-                Copy <strong>Your address</strong> (appears after connecting)
-              </li>
-              <li>
-                Open a second tab → connect to relay → paste Tab 1&apos;s address → <strong>Connect to peer</strong>
-              </li>
-              <li>
-                Send messages — they sync between tabs
-              </li>
-            </ol>
+        {/* ── Initializing spinner ── */}
+        {isInitializing && (
+          <div className="py-8 flex flex-col items-center gap-4 text-concord-text-secondary">
+            <div className="w-10 h-10 border-2 border-concord-accent border-t-transparent rounded-full animate-spin" />
+            <span className="text-lg">{overallStatus}</span>
           </div>
         )}
 
-        {/* Step 1: Relay */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-ass-text-secondary">
-            1. Relay address
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={relayAddr}
-              onChange={(e) => setRelayAddr(e.target.value)}
-              placeholder="/ip4/127.0.0.1/tcp/12345/ws/p2p/..."
-              className="flex-1 rounded-lg bg-ass-bg-tertiary px-3 py-2.5 text-ass-text-primary placeholder-ass-text-secondary border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-ass-accent text-sm font-mono"
-            />
-            <button
-              onClick={() => onConnectRelay(relayAddr)}
-              className="px-4 py-2.5 rounded-lg bg-ass-accent hover:bg-[var(--accent-hover)] font-medium text-sm whitespace-nowrap"
-            >
-              Connect to relay
-            </button>
-          </div>
-        </div>
-
-        {/* Step 2: Your address (show when connected) */}
-        {myAddress && (
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-ass-text-secondary">
-              2. Your address <span className="text-[var(--success)]">(share with other tab)</span>
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                readOnly
-                value={myAddress}
-                className="flex-1 rounded-lg bg-ass-bg-tertiary px-3 py-2.5 text-ass-text-secondary border border-[var(--border)] text-sm font-mono truncate"
-                title={myAddress}
-              />
-              <button
-                onClick={handleCopy}
-                className={`px-4 py-2.5 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-                  copied
-                    ? 'bg-[var(--success)] text-white'
-                    : 'bg-ass-bg-tertiary border border-[var(--border)] hover:bg-ass-bg-primary'
-                }`}
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
+        {/* ── Connection error banner ── */}
+        {connectionError && (
+          <div className="mb-6 p-5 rounded-xl bg-red-500/20 text-red-400 flex justify-between items-start gap-4">
+            <div>
+              <p className="text-sm font-medium mb-1">Connection error</p>
+              <p className="text-sm break-all">{connectionError}</p>
             </div>
+            {onClearConnectionError && (
+              <button
+                onClick={onClearConnectionError}
+                className="text-sm text-concord-accent hover:underline shrink-0"
+              >
+                Dismiss
+              </button>
+            )}
           </div>
         )}
 
-        {/* Step 3: Peer address */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-ass-text-secondary">
-            3. Peer address <span className="text-ass-text-secondary">(from other tab)</span>
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={peerAddr}
-              onChange={(e) => setPeerAddr(e.target.value)}
-              placeholder="Paste the other tab's address here"
-              className="flex-1 rounded-lg bg-ass-bg-tertiary px-3 py-2.5 text-ass-text-primary placeholder-ass-text-secondary border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-ass-accent text-sm font-mono"
-            />
+        {/* ── Ready state: show identity + address + peer connection ── */}
+        {myAddress && (
+          <div className="space-y-6">
+            {/* Stable Peer ID */}
+            {peerId && (
+              <div>
+                <label className="text-xs font-medium text-concord-text-secondary uppercase tracking-wider block mb-1">
+                  Your Peer ID (stable across restarts)
+                </label>
+                <div className="flex gap-2 items-center">
+                  <p className="flex-1 min-w-0 rounded-lg bg-concord-bg-tertiary px-3 py-2 text-concord-accent font-mono text-xs break-all select-text border border-[var(--border)]">
+                    {peerId}
+                  </p>
+                  <button
+                    onClick={() => handleCopy(peerId, 'peerId')}
+                    className="px-3 py-2 rounded-lg bg-concord-bg-tertiary hover:bg-concord-bg-secondary border border-[var(--border)] text-xs font-medium text-concord-text-secondary shrink-0"
+                  >
+                    {copiedField === 'peerId' ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* mDNS auto-discovery note */}
+            <div className="rounded-lg bg-concord-accent/10 border border-concord-accent/30 px-4 py-3">
+              <p className="text-sm text-concord-accent font-medium">
+                LAN auto-discovery is active
+              </p>
+              <p className="text-xs text-concord-text-secondary mt-1">
+                Peers on the same network are found automatically via mDNS. For remote connections, share your address below.
+              </p>
+            </div>
+
+            {/* Local address */}
+            <div>
+              <label className="text-base font-semibold text-concord-text-primary block mb-2">
+                Your address — share this for remote connections
+              </label>
+              <div className="flex gap-2 items-start">
+                <div className="flex-1 min-w-0 rounded-xl bg-concord-bg-tertiary px-4 py-3 border-2 border-concord-accent">
+                  <p className="text-concord-text-primary font-mono text-base break-all select-text leading-relaxed">
+                    {myAddress}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleCopy(myAddress, 'local')}
+                  className={`px-6 py-3 rounded-xl font-semibold text-sm whitespace-nowrap transition-colors ${
+                    copiedField === 'local'
+                      ? 'bg-[var(--success)] text-white'
+                      : 'bg-concord-accent hover:bg-[var(--accent-hover)] text-white'
+                  }`}
+                >
+                  {copiedField === 'local' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              {lanAddress && (
+                <div className="mt-2">
+                  <p className="text-xs text-concord-text-secondary mb-1">
+                    LAN address (for other machines on your network):
+                  </p>
+                  <div className="flex gap-2 items-start">
+                    <p className="flex-1 min-w-0 rounded-lg bg-concord-bg-tertiary px-3 py-2 text-concord-text-secondary font-mono text-xs break-all select-text">
+                      {lanAddress}
+                    </p>
+                    <button
+                      onClick={() => handleCopy(lanAddress, 'lan')}
+                      className="px-4 py-2 rounded-lg bg-concord-bg-tertiary hover:bg-concord-bg-secondary border border-[var(--border)] text-xs font-medium text-concord-text-secondary"
+                    >
+                      {copiedField === 'lan' ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Peer address input */}
+            <div>
+              <label className="text-sm font-medium text-concord-text-secondary block mb-2">
+                Paste their address to connect
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={peerAddr}
+                  onChange={(e) => setPeerAddr(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleConnect(); }}
+                  placeholder="Paste address here..."
+                  disabled={connecting}
+                  className="flex-1 rounded-xl bg-concord-bg-tertiary px-4 py-3 text-concord-text-primary placeholder-concord-text-secondary border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-concord-accent text-sm font-mono disabled:opacity-70"
+                />
+                <button
+                  onClick={handleConnect}
+                  disabled={!peerAddr.trim() || connecting}
+                  className="px-6 py-3 rounded-xl bg-concord-accent hover:bg-[var(--accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm whitespace-nowrap text-white transition-colors min-w-[100px]"
+                >
+                  {connecting ? 'Connecting...' : 'Connect'}
+                </button>
+              </div>
+            </div>
+
             <button
-              onClick={() => onDialPeer(peerAddr)}
-              disabled={!peerAddr.trim()}
-              className="px-4 py-2.5 rounded-lg border border-ass-accent text-ass-accent hover:bg-ass-accent/20 font-medium text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={onOpenChat}
+              className="w-full py-4 rounded-xl bg-concord-bg-tertiary hover:bg-concord-bg-secondary border border-[var(--border)] font-semibold text-concord-text-primary text-lg transition-colors"
             >
-              Connect to peer
+              Open chat {peerCount > 0 ? `(${peerCount} connected)` : ''}
             </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

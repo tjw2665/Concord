@@ -41,12 +41,12 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
           placeholder={disabled ? "Connect to relay first..." : "Type a message... (Enter to send)"}
           disabled={disabled}
           rows={1}
-          className="flex-1 resize-none rounded-lg bg-ass-bg-secondary px-4 py-2.5 text-ass-text-primary placeholder-ass-text-secondary border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-ass-accent min-h-[40px] max-h-[120px]"
+          className="flex-1 resize-none rounded-lg bg-concord-bg-secondary px-4 py-2.5 text-concord-text-primary placeholder-concord-text-secondary border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-concord-accent min-h-[40px] max-h-[120px]"
         />
         <button
           onClick={handleSubmit}
           disabled={disabled || !value.trim()}
-          className="px-4 py-2.5 rounded-lg bg-ass-accent hover:bg-[var(--accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+          className="px-4 py-2.5 rounded-lg bg-concord-accent hover:bg-[var(--accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
         >
           Send
         </button>

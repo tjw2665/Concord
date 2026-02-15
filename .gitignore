@@ -10,6 +10,9 @@ packages/protocol/dist/
 .env.local
 .env.*.local
 
+# Relay config (machine-specific port)
+scripts/relay-config.json
+
 # IDE
 .idea/
 .vscode/

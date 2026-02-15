@@ -1,4 +1,4 @@
-# AntiSurveillanceState — API & Service Contracts
+# Concord — API & Service Contracts
 
 ## 1. Service Interfaces
 
@@ -239,9 +239,9 @@ async fn sync_anchor(channel_id: String) -> Result<String, String>;
 
 | Topic Pattern | Purpose |
 |---------------|---------|
-| `ass/channel/{channelId}` | Message broadcast for channel |
-| `ass/discovery/{channelId}` | Peer discovery for channel |
-| `ass/anchor/{channelId}` | Anchor notifications |
+| `concord/channel/{channelId}` | Message broadcast for channel |
+| `concord/discovery/{channelId}` | Peer discovery for channel |
+| `concord/anchor/{channelId}` | Anchor notifications |
 
 ---
 
