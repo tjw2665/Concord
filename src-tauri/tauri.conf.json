@@ -42,7 +42,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBFMDFCRTkzNTVBNzQ0MzkKUldRNVJLZFZrNzRCRHF3R0dwU3BNRTdteHdPK2hpYWZXRFVBcHlxUW84WjVFR1hWZEhnTVVGT24K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRFOUFCNjgxRTRGOTNEMDIKUldRQ1BmbmtnYmFhVGlUU1ZwV1puRThjREZRNWxhaXROaTBNTnZEWk9Sb2cvVjdPZVJvbkZSVlYK",
       "endpoints": [
         "https://github.com/tjw2665/Concord/releases/latest/download/latest.json"
       ],
