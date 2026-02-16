@@ -161,16 +161,35 @@ async function loadOrCreatePort() {
   return { port, conflict: false };
 }
 
+// ── Fetch relay info ─────────────────────────────────────────────
+
+async function getRelayInfo() {
+  try {
+    const info = await fetchJson(`${RELAY_HTTP_URL}/info`);
+    log(`Relay info: PeerId=${info.relayPeerId}`);
+    return info.relayPeerId;
+  } catch (e) {
+    log(`Could not reach relay: ${e.message}`);
+    return null;
+  }
+}
+
 // ── Create libp2p node ───────────────────────────────────────────
 
-async function createNode(port, privateKey) {
+async function createNode(port, privateKey, relayPeerId) {
+  const listenAddrs = [`/ip4/0.0.0.0/tcp/${port}/ws`];
+
+  // If we know the relay PeerId, add a circuit relay listen address.
+  // This tells the circuit relay transport to connect to the relay
+  // and make a reservation so other peers can reach us through it.
+  if (relayPeerId) {
+    listenAddrs.push(`${RELAY_WS_ADDR}/p2p/${relayPeerId}/p2p-circuit`);
+    log(`Will listen on relay circuit: ${RELAY_WS_ADDR}/p2p/${relayPeerId}/p2p-circuit`);
+  }
+
   return createLibp2p({
     privateKey,
-    addresses: {
-      listen: [
-        `/ip4/0.0.0.0/tcp/${port}/ws`,
-      ],
-    },
+    addresses: { listen: listenAddrs },
     transports: [
       webSockets(),
       circuitRelayTransport({ discoverRelays: 1 }),
@@ -309,8 +328,13 @@ try {
   const { port, conflict } = await loadOrCreatePort();
   const { privateKey, isNew, isEphemeral } = await loadOrCreateIdentity(conflict);
 
+  // Fetch relay info before creating the node so we can include
+  // the circuit relay listen address, which triggers an automatic reservation.
+  log('Fetching relay info...');
+  let relayPeerId = await getRelayInfo();
+
   try {
-    node = await createNode(port, privateKey);
+    node = await createNode(port, privateKey, relayPeerId);
   } catch (err) {
     const addrInUse =
       err?.message?.includes('EADDRINUSE') ||
@@ -321,7 +345,7 @@ try {
       try { unlinkSync(CONFIG_PATH); } catch { /* ok */ }
       const newPort = await getAvailablePort();
       writeFileSync(CONFIG_PATH, JSON.stringify({ port: newPort }, null, 2));
-      node = await createNode(newPort, privateKey);
+      node = await createNode(newPort, privateKey, relayPeerId);
     } else {
       throw err;
     }
@@ -331,7 +355,10 @@ try {
   registerChatHandler(node);
 
   const peerId = node.peerId.toString();
-  const firstAddr = node.getMultiaddrs()[0]?.toString() ?? '';
+
+  // Find the local listen port from multiaddrs (skip circuit relay addrs)
+  const localAddrs = node.getMultiaddrs().filter(ma => !ma.toString().includes('p2p-circuit'));
+  const firstAddr = localAddrs[0]?.toString() ?? '';
   const portMatch = firstAddr.match(/\/tcp\/(\d+)\//);
   const actualPort = portMatch ? Number(portMatch[1]) : port;
   const localAddr = `/ip4/127.0.0.1/tcp/${actualPort}/ws/p2p/${peerId}`;
@@ -339,41 +366,47 @@ try {
   const lanAddr = lanIp ? `/ip4/${lanIp}/tcp/${actualPort}/ws/p2p/${peerId}` : null;
 
   log(`Started. PeerId=${peerId} port=${actualPort} ephemeral=${isEphemeral}`);
+  log(`All multiaddrs: ${node.getMultiaddrs().map(String).join(', ')}`);
 
-  // ── Connect to public relay ───────────────────────────────────
+  // ── Register invite code with relay ────────────────────────────
   let inviteCode = null;
-  let relayPeerId = null;
 
-  async function connectToRelay() {
+  async function registerInviteCode() {
+    if (!relayPeerId) return;
     try {
-      log('Connecting to relay...');
-      // First get relay info to discover its PeerId
-      const info = await fetchJson(`${RELAY_HTTP_URL}/info`);
-      relayPeerId = info.relayPeerId;
-      log(`Relay PeerId: ${relayPeerId}`);
-
-      // Dial the relay WebSocket address
-      const relayAddr = `${RELAY_WS_ADDR}/p2p/${relayPeerId}`;
-      log(`Dialing relay: ${relayAddr}`);
-      await node.dial(multiaddr(relayAddr));
-      log('Connected to relay!');
-
-      // Register with the relay HTTP API to get an invite code
       const reg = await fetchJson(`${RELAY_HTTP_URL}/register?peerId=${peerId}`);
       inviteCode = reg.code;
       log(`Invite code: ${inviteCode}`);
-
-      // Emit the invite code to the frontend
       emit({ type: 'invite_code', code: inviteCode });
     } catch (e) {
-      log(`Relay connection failed: ${e.message} (falling back to LAN only)`);
-      // Retry after a delay
-      setTimeout(connectToRelay, 15000);
+      log(`Invite code registration failed: ${e.message}`);
+      setTimeout(registerInviteCode, 10000);
     }
   }
 
-  // Start relay connection (non-blocking)
-  connectToRelay();
+  async function reconnectRelay() {
+    try {
+      log('Reconnecting to relay...');
+      relayPeerId = await getRelayInfo();
+      if (!relayPeerId) {
+        setTimeout(reconnectRelay, 15000);
+        return;
+      }
+      const relayAddr = `${RELAY_WS_ADDR}/p2p/${relayPeerId}`;
+      await node.dial(multiaddr(relayAddr));
+      log('Reconnected to relay!');
+      await registerInviteCode();
+    } catch (e) {
+      log(`Relay reconnection failed: ${e.message}`);
+      setTimeout(reconnectRelay, 15000);
+    }
+  }
+
+  // Register the invite code once relay reservation is established.
+  // Give the node a moment for the circuit relay transport to finish reserving.
+  if (relayPeerId) {
+    setTimeout(registerInviteCode, 3000);
+  }
 
   // ── Peer events ────────────────────────────────────────────────
   node.addEventListener('peer:connect', (evt) => {
@@ -390,7 +423,7 @@ try {
     // If relay disconnected, attempt reconnection
     if (relayPeerId && pid === relayPeerId) {
       log('Relay disconnected, attempting reconnection...');
-      setTimeout(connectToRelay, 5000);
+      setTimeout(reconnectRelay, 5000);
     }
   });
 

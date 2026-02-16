@@ -11,6 +11,7 @@ export default {
           tertiary: '#1e1f22',
         },
         'concord-accent': '#5865f2',
+        'concord-accent-primary': '#5865f2',
         'concord-text': {
           primary: '#f2f3f5',
           secondary: '#b5bac1',
