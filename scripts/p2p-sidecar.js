@@ -217,7 +217,10 @@ const stats = { sent: 0, sendFail: 0, recv: 0, recvFail: 0 };
 async function sendToPeer(node, peerId, payload) {
   const pid = peerId.toString().slice(0, 16);
   log(`send: opening stream to ${pid} protocol=${CHAT_PROTOCOL}`);
-  const stream = await node.dialProtocol(peerId, CHAT_PROTOCOL);
+  // runOnLimitedConnection: true — required for circuit relay connections
+  const stream = await node.dialProtocol(peerId, CHAT_PROTOCOL, {
+    runOnLimitedConnection: true,
+  });
   const bytes = fromString(payload + '\n');
   log(`send: writing ${bytes.length} bytes to ${pid}`);
 
@@ -231,13 +234,14 @@ async function sendToPeer(node, peerId, payload) {
 /**
  * Send a message to every connected peer. Fire-and-forget per peer.
  */
-async function sendToAllPeers(node, payload) {
-  const peers = node.getPeers();
+async function sendToAllPeers(node, payload, relayId) {
+  // Filter out the relay peer — it doesn't support the chat protocol
+  const peers = node.getPeers().filter(p => !relayId || p.toString() !== relayId);
   if (peers.length === 0) {
-    log('send: no connected peers');
+    log('send: no connected chat peers');
     return;
   }
-  log(`send: broadcasting to ${peers.length} peer(s)`);
+  log(`send: broadcasting to ${peers.length} chat peer(s)`);
   const results = await Promise.allSettled(
     peers.map((p) => sendToPeer(node, p, payload))
   );
@@ -258,6 +262,7 @@ async function sendToAllPeers(node, payload) {
  * Reads newline-delimited JSON from the stream.
  */
 function registerChatHandler(node) {
+  // runOnLimitedConnection: true — required so we accept streams over circuit relay
   node.handle(CHAT_PROTOCOL, (stream, connection) => {
     const remotePeer = connection.remotePeer.toString();
     const remoteShort = remotePeer.slice(0, 16);
@@ -316,7 +321,7 @@ function registerChatHandler(node) {
         }
       }
     })();
-  });
+  }, { runOnLimitedConnection: true });
   log(`Registered chat protocol: ${CHAT_PROTOCOL}`);
 }
 
@@ -492,7 +497,7 @@ try {
         case 'send': {
           const channelId = cmd.channelId || DEFAULT_CHANNEL;
           const payload = JSON.stringify({ channelId, data: cmd.data });
-          await sendToAllPeers(node, payload);
+          await sendToAllPeers(node, payload, relayPeerId);
           break;
         }
 
