@@ -202,14 +202,20 @@ fn start_sidecar(app: tauri::AppHandle) -> Result<(), String> {
 
 // ── Tauri commands ───────────────────────────────────────────────
 
-/// Send a gossipsub message through the sidecar.
+/// Send a chat message through the sidecar.
+/// If `target_peer_id` is provided, send only to that peer (DM).
+/// Otherwise broadcast to all connected peers.
 #[tauri::command]
-fn p2p_send(channel_id: String, data: String) -> Result<(), String> {
-    write_to_sidecar(&serde_json::json!({
+fn p2p_send(channel_id: String, data: String, target_peer_id: Option<String>) -> Result<(), String> {
+    let mut payload = serde_json::json!({
         "cmd": "send",
         "channelId": channel_id,
         "data": data
-    }))
+    });
+    if let Some(ref tid) = target_peer_id {
+        payload["targetPeerId"] = serde_json::json!(tid);
+    }
+    write_to_sidecar(&payload)
 }
 
 /// Tell the sidecar to dial a remote peer.

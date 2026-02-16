@@ -63,7 +63,9 @@ export default function App() {
           ? 'Connection error'
           : 'Initializing...';
 
-  const channelDisplayName = activeChannel?.name ?? 'general';
+  const channelDisplayName = activeChannel
+    ? (activeChannel.type === 'dm' ? activeChannel.name : activeChannel.name)
+    : 'general';
 
   const centerContent =
     view === 'connect' ? (

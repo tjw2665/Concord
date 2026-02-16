@@ -22,6 +22,11 @@ interface SpaceState {
 
   getSpace: (id: string) => Space | undefined;
   getChannel: (spaceId: string, channelId: string) => SpaceChannel | undefined;
+
+  /** Create (or return existing) DM channel for a remote peer */
+  addDmChannel: (remotePeerId: string) => SpaceChannel;
+  /** Look up an existing DM channel by remote peer ID */
+  getDmChannelByPeerId: (peerId: string) => SpaceChannel | undefined;
 }
 
 function generateId(): string {
@@ -139,6 +144,42 @@ export const useSpaceStore = create<SpaceState>()(
             sp.id === id ? { ...sp, expanded: !sp.expanded } : sp
           ),
         }));
+      },
+
+      addDmChannel: (remotePeerId) => {
+        const dmChannelId = `dm:${remotePeerId}`;
+        // Check if it already exists
+        const dmsSpace = get().spaces.find((s) => s.id === 'dms');
+        const existing = dmsSpace?.channels.find((c) => c.id === dmChannelId);
+        if (existing) return existing;
+
+        // Create a short display name from the PeerId
+        const shortName = remotePeerId.length > 12
+          ? `${remotePeerId.slice(0, 8)}…${remotePeerId.slice(-4)}`
+          : remotePeerId;
+
+        const channel: SpaceChannel = {
+          id: dmChannelId,
+          name: shortName,
+          type: 'dm',
+          order: (dmsSpace?.channels.length ?? 0),
+        };
+
+        // Ensure the dms space exists, then add the channel
+        set((s) => ({
+          spaces: s.spaces.map((sp) =>
+            sp.id === 'dms'
+              ? { ...sp, channels: [...sp.channels, channel], expanded: true }
+              : sp
+          ),
+        }));
+        return channel;
+      },
+
+      getDmChannelByPeerId: (peerId) => {
+        const dmChannelId = `dm:${peerId}`;
+        const dmsSpace = get().spaces.find((s) => s.id === 'dms');
+        return dmsSpace?.channels.find((c) => c.id === dmChannelId);
       },
 
       getSpace: (id) => get().spaces.find((s) => s.id === id),

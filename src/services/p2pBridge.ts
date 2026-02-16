@@ -44,6 +44,7 @@ export interface P2PDialResultEvent {
   type: 'dial_result';
   ok: boolean;
   address: string;
+  peerId?: string;
   error?: string;
   peers?: string[];
 }
@@ -74,9 +75,11 @@ export async function startP2P(): Promise<void> {
   await invoke('start_p2p');
 }
 
-/** Publish a message to a gossipsub channel. */
-export async function sendMessage(channelId: string, data: string): Promise<void> {
-  await invoke('p2p_send', { channelId, data });
+/** Send a message to a channel.
+ *  If targetPeerId is provided, send only to that peer (DM).
+ *  Otherwise broadcast to all connected peers. */
+export async function sendMessage(channelId: string, data: string, targetPeerId?: string): Promise<void> {
+  await invoke('p2p_send', { channelId, data, targetPeerId: targetPeerId ?? null });
 }
 
 /** Tell the sidecar to dial a remote peer address. */

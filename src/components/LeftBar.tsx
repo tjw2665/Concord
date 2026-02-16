@@ -52,7 +52,17 @@ function ChannelItem({
   isActive: boolean;
   onClick: () => void;
 }) {
-  const icon = channel.type === 'voice' ? '🔊' : '#';
+  const isDm = channel.type === 'dm';
+  const icon = isDm ? (
+    <svg className="w-4 h-4 text-concord-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  ) : (
+    <span className="text-concord-text-secondary text-xs w-4">
+      {channel.type === 'voice' ? '🔊' : '#'}
+    </span>
+  );
+
   return (
     <button
       onClick={onClick}
@@ -62,8 +72,8 @@ function ChannelItem({
           : 'text-concord-text-secondary hover:bg-concord-bg-secondary/50 hover:text-concord-text-primary'
       }`}
     >
-      <span className="text-concord-text-secondary text-xs w-4">{icon}</span>
-      <span className="truncate">{channel.name}</span>
+      {icon}
+      <span className="truncate font-mono text-xs">{channel.name}</span>
     </button>
   );
 }

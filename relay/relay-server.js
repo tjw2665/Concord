@@ -98,8 +98,14 @@ const node = await createLibp2p({
 const relayPeerId = node.peerId.toString();
 const relayAddrs = node.getMultiaddrs().map(String);
 
+// The external address clients should use to reach this relay.
+// On Fly.io, the WebSocket is proxied through port 443 with TLS.
+const EXTERNAL_HOSTNAME = process.env.RELAY_HOSTNAME || 'concord-relay.fly.dev';
+const externalRelayAddr = `/dns4/${EXTERNAL_HOSTNAME}/tcp/443/wss/p2p/${relayPeerId}`;
+
 console.log(`Relay started. PeerId: ${relayPeerId}`);
 console.log(`Listening on:`, relayAddrs);
+console.log(`External address: ${externalRelayAddr}`);
 
 // Track peer connections
 node.addEventListener('peer:connect', (evt) => {
@@ -140,10 +146,8 @@ const httpServer = http.createServer((req, res) => {
     const peerId = url.searchParams.get('peerId');
     if (!peerId) return jsonResponse(res, 400, { error: 'Missing peerId parameter' });
     const code = registerPeer(peerId);
-    // Build the circuit relay address for this peer
-    const relayAddr = relayAddrs.find(a => a.includes('/ws/')) || relayAddrs[0] || '';
-    const circuitAddr = `${relayAddr}/p2p-circuit/p2p/${peerId}`;
-    return jsonResponse(res, 200, { code, relayPeerId, relayAddr, circuitAddr });
+    const circuitAddr = `${externalRelayAddr}/p2p-circuit/p2p/${peerId}`;
+    return jsonResponse(res, 200, { code, relayPeerId, relayAddr: externalRelayAddr, circuitAddr });
   }
 
   if (path === '/lookup') {
@@ -151,14 +155,13 @@ const httpServer = http.createServer((req, res) => {
     if (!code) return jsonResponse(res, 400, { error: 'Missing code parameter' });
     const entry = lookupCode(code);
     if (!entry) return jsonResponse(res, 404, { error: 'Code not found or expired' });
-    const relayAddr = relayAddrs.find(a => a.includes('/ws/')) || relayAddrs[0] || '';
-    const circuitAddr = `${relayAddr}/p2p-circuit/p2p/${entry.peerId}`;
-    return jsonResponse(res, 200, { peerId: entry.peerId, relayAddr, circuitAddr });
+    const circuitAddr = `${externalRelayAddr}/p2p-circuit/p2p/${entry.peerId}`;
+    return jsonResponse(res, 200, { peerId: entry.peerId, relayAddr: externalRelayAddr, circuitAddr });
   }
 
   // Relay info (public)
   if (path === '/info') {
-    return jsonResponse(res, 200, { relayPeerId, relayAddrs });
+    return jsonResponse(res, 200, { relayPeerId, relayAddrs, externalRelayAddr });
   }
 
   jsonResponse(res, 404, { error: 'Not found' });

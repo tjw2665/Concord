@@ -35,6 +35,7 @@ import { createLibp2p } from 'libp2p';
 import { toString, fromString } from 'uint8arrays';
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from '@libp2p/crypto/keys';
 import { multiaddr } from '@multiformats/multiaddr';
+import { peerIdFromString } from '@libp2p/peer-id';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, 'relay-config.json');
@@ -497,7 +498,28 @@ try {
         case 'send': {
           const channelId = cmd.channelId || DEFAULT_CHANNEL;
           const payload = JSON.stringify({ channelId, data: cmd.data });
-          await sendToAllPeers(node, payload, relayPeerId);
+
+          if (cmd.targetPeerId) {
+            // Point-to-point DM: send only to the specified peer
+            log(`send: targeted send to ${cmd.targetPeerId.slice(0, 16)}`);
+            try {
+              const targetPeer = node.getPeers().find(p => p.toString() === cmd.targetPeerId);
+              if (targetPeer) {
+                await sendToPeer(node, targetPeer, payload);
+              } else {
+                // Peer not currently connected — try dialing by PeerId
+                // (libp2p will use the peer store to find known addresses)
+                log(`send: target peer not in connected list, attempting dialProtocol directly`);
+                const pid = peerIdFromString(cmd.targetPeerId);
+                await sendToPeer(node, pid, payload);
+              }
+            } catch (e) {
+              log(`send: targeted send failed: ${e.message}`);
+            }
+          } else {
+            // Broadcast to all connected peers (group channel behavior)
+            await sendToAllPeers(node, payload, relayPeerId);
+          }
           break;
         }
 
@@ -516,7 +538,13 @@ try {
               log(`Resolved code ${addr} -> ${lookup.circuitAddr}`);
               await node.dial(multiaddr(lookup.circuitAddr));
               log(`Connected via invite code: ${addr}`);
-              emit({ type: 'dial_result', ok: true, address: addr, peers: node.getPeers().map(String) });
+              emit({
+                type: 'dial_result',
+                ok: true,
+                address: addr,
+                peerId: lookup.peerId,
+                peers: node.getPeers().map(String),
+              });
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
               log(`Invite code dial failed: ${msg}`);

@@ -15,6 +15,7 @@ import {
 } from '../services/p2pBridge';
 import { initIdentity, sign } from '../services/identity';
 import { useMessageStore } from '../stores/messageStore';
+import { useSpaceStore } from '../stores/spaceStore';
 import { getKnownPeers, addKnownPeer, clearKnownPeers } from '../services/knownPeers';
 import type { Message } from '@concord/protocol';
 
@@ -150,10 +151,23 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
         case 'message': {
           try {
             const raw = (evt as any).data;
-            log(`MSG-recv ch=${(evt as any).channelId} from=${((evt as any).from ?? '?').slice(0, 12)} raw_len=${typeof raw === 'string' ? raw.length : '?'}`);
+            const fromPeer = (evt as any).from as string | undefined;
+            const incomingChannel = (evt as any).channelId as string;
+            log(`MSG-recv ch=${incomingChannel} from=${(fromPeer ?? '?').slice(0, 12)} raw_len=${typeof raw === 'string' ? raw.length : '?'}`);
             const msg = JSON.parse(raw) as Message;
             log(`MSG-add id=${msg.id.slice(0, 16)} author=${msg.authorId.slice(0, 12)} content="${msg.content.slice(0, 30)}"`);
-            addMessage(evt.channelId, msg);
+
+            // If this is a DM message and we don't have a channel for it,
+            // auto-create one so the user sees the conversation
+            if (incomingChannel.startsWith('dm:') && fromPeer) {
+              const store = useSpaceStore.getState();
+              if (!store.getDmChannelByPeerId(fromPeer)) {
+                store.addDmChannel(fromPeer);
+                log(`Auto-created DM channel for incoming message from ${fromPeer.slice(0, 16)}`);
+              }
+            }
+
+            addMessage(incomingChannel, msg);
           } catch (parseErr) {
             log(`MSG-parse-error: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
           }
@@ -182,6 +196,15 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
             log(`Dial succeeded: ${evt.address.slice(0, 50)}...`);
             addKnownPeer(evt.address);
             if (evt.peers) setConnectedPeers(evt.peers);
+
+            // If the dial resolved a remote peerId (invite code flow), auto-create DM
+            if (evt.peerId) {
+              const store = useSpaceStore.getState();
+              const dmCh = store.addDmChannel(evt.peerId);
+              store.setActiveSpace('dms');
+              store.setActiveChannel(dmCh.id);
+              log(`DM channel created for ${evt.peerId.slice(0, 16)}`);
+            }
           } else {
             const errMsg = evt.error ?? 'Unknown dial error';
             log(`Dial failed: ${errMsg}`);
@@ -241,8 +264,12 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
       };
       // Add to local store immediately (optimistic)
       addMessage(channelId, msg);
-      // Publish through sidecar
-      await bridgeSend(channelId, JSON.stringify(msg));
+
+      // For DM channels, extract the target peer and send point-to-point
+      const targetPeerId = channelId.startsWith('dm:')
+        ? channelId.slice(3)
+        : undefined;
+      await bridgeSend(channelId, JSON.stringify(msg), targetPeerId);
     },
     [channelId, addMessage]
   );
