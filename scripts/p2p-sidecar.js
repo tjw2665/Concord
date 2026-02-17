@@ -551,17 +551,41 @@ try {
               }
               log(`Resolved code ${addr} -> peerId=${lookup.peerId}`);
 
-              // Dial the circuit relay address.
-              // This establishes a temporary circuit connection, which triggers
-              // WebRTC SDP signaling. The connection then upgrades to a direct
+              // The relay returns a WebRTC-over-relay address:
+              //   /dns4/.../wss/p2p/RELAY_ID/p2p-circuit/webrtc/p2p/PEER_ID
+              // The /webrtc component triggers the WebRTC transport to use
+              // the circuit relay as a signaling channel and establish a direct
               // WebRTC data channel — persistent and relay-free.
+              let dialAddr = lookup.circuitAddr;
+
+              // Ensure the address contains /webrtc (handles both old and new relay)
+              if (!dialAddr.includes('/webrtc')) {
+                dialAddr = dialAddr.replace(
+                  /\/p2p-circuit\/p2p\/(.+)$/,
+                  '/p2p-circuit/webrtc/p2p/$1'
+                );
+                log(`Upgraded to WebRTC address: ${dialAddr}`);
+              }
+
               try {
-                await node.dial(multiaddr(lookup.circuitAddr));
-                log(`Connection established for: ${addr} (will upgrade to WebRTC)`);
+                await node.dial(multiaddr(dialAddr));
+                log(`WebRTC connection established for: ${addr}`);
               } catch (dialErr) {
-                log(`Dial failed for ${addr}: ${dialErr.message}`);
-                emit({ type: 'dial_result', ok: false, address: addr, error: `Connection failed: ${dialErr.message}. Your NAT may not support direct connections.` });
-                break;
+                // WebRTC signaling closes the circuit stream when done, which
+                // can throw an EOF error. Check if we actually connected.
+                const isEOF = dialErr.message?.includes('EOF') ||
+                              dialErr.message?.includes('stream closed');
+                const connected = node.getPeers().some(p => p.toString() === lookup.peerId);
+
+                if (isEOF && connected) {
+                  log(`WebRTC established for ${addr} (signaling stream closed normally)`);
+                } else if (connected) {
+                  log(`Connected to ${addr} despite error: ${dialErr.message}`);
+                } else {
+                  log(`Dial failed for ${addr}: ${dialErr.message}`);
+                  emit({ type: 'dial_result', ok: false, address: addr, error: `Connection failed: ${dialErr.message}. Your NAT may not support direct connections.` });
+                  break;
+                }
               }
 
               emit({

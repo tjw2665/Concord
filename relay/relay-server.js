@@ -151,7 +151,8 @@ const httpServer = http.createServer((req, res) => {
     const peerId = url.searchParams.get('peerId');
     if (!peerId) return jsonResponse(res, 400, { error: 'Missing peerId parameter' });
     const code = registerPeer(peerId);
-    const circuitAddr = `${externalRelayAddr}/p2p-circuit/p2p/${peerId}`;
+    // WebRTC address: /p2p-circuit/webrtc/p2p/PEER — triggers WebRTC upgrade
+    const circuitAddr = `${externalRelayAddr}/p2p-circuit/webrtc/p2p/${peerId}`;
     return jsonResponse(res, 200, { code, relayPeerId, relayAddr: externalRelayAddr, circuitAddr });
   }
 
@@ -160,7 +161,8 @@ const httpServer = http.createServer((req, res) => {
     if (!code) return jsonResponse(res, 400, { error: 'Missing code parameter' });
     const entry = lookupCode(code);
     if (!entry) return jsonResponse(res, 404, { error: 'Code not found or expired' });
-    const circuitAddr = `${externalRelayAddr}/p2p-circuit/p2p/${entry.peerId}`;
+    // WebRTC address: /p2p-circuit/webrtc/p2p/PEER — triggers WebRTC upgrade
+    const circuitAddr = `${externalRelayAddr}/p2p-circuit/webrtc/p2p/${entry.peerId}`;
     return jsonResponse(res, 200, { peerId: entry.peerId, relayAddr: externalRelayAddr, circuitAddr });
   }
 
