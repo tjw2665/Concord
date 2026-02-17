@@ -35,7 +35,6 @@ import { createLibp2p } from 'libp2p';
 import { toString, fromString } from 'uint8arrays';
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from '@libp2p/crypto/keys';
 import { multiaddr } from '@multiformats/multiaddr';
-import { peerIdFromString } from '@libp2p/peer-id';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, 'relay-config.json');
@@ -545,6 +544,13 @@ try {
   // Poll every 1.5 seconds for low latency
   const pollInterval = setInterval(pollRelayMessages, 1500);
 
+  /** Merge libp2p connected peers with knownChatPeers for a full list */
+  function allKnownPeers() {
+    const set = new Set([...node.getPeers().map(String), ...knownChatPeers]);
+    if (relayPeerId) set.delete(relayPeerId);
+    return [...set];
+  }
+
   // ── Peer events ────────────────────────────────────────────────
   node.addEventListener('peer:connect', (evt) => {
     const pid = evt.detail.toString();
@@ -554,13 +560,14 @@ try {
       knownChatPeers.add(pid);
       log(`Added ${pid.slice(0, 16)} to known chat peers (total: ${knownChatPeers.size})`);
     }
-    emit({ type: 'peer:connect', peerId: pid, peers: node.getPeers().map(String) });
+    emit({ type: 'peer:connect', peerId: pid, peers: allKnownPeers() });
   });
 
   node.addEventListener('peer:disconnect', (evt) => {
     const pid = evt.detail.toString();
     log(`Peer disconnected: ${pid}`);
-    emit({ type: 'peer:disconnect', peerId: pid, peers: node.getPeers().map(String) });
+    // Report known peers — NOT raw getPeers(), so the UI stays stable
+    emit({ type: 'peer:disconnect', peerId: pid, peers: allKnownPeers() });
 
     // If relay disconnected, attempt reconnection
     if (relayPeerId && pid === relayPeerId) {
@@ -606,6 +613,8 @@ try {
       listenPort: actualPort,
       listenAddrs: node.getMultiaddrs().map(String),
       connections: peerDetails,
+      knownChatPeers: [...knownChatPeers],
+      peers: allKnownPeers(),
       stats: { ...stats },
       inviteCode,
     });
