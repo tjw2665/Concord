@@ -47,6 +47,7 @@ const DEFAULT_CHANNEL = 'general';
 
 const DATA_DIR = process.env.CONCORD_DATA_DIR || join(__dirname, '..');
 const IDENTITY_PATH = join(DATA_DIR, 'node-identity.json');
+const IS_INCOGNITO = process.env.CONCORD_INCOGNITO === '1';
 
 // ── Relay configuration ─────────────────────────────────────────
 const RELAY_HTTP_URL = 'https://concord-relay.fly.dev:8080';
@@ -57,13 +58,25 @@ const INVITE_CODE_RE = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/i;
 // ── Helpers ──────────────────────────────────────────────────────
 
 function emit(event) {
-  process.stdout.write(JSON.stringify(event) + '\n');
+  try {
+    process.stdout.write(JSON.stringify(event) + '\n');
+  } catch {
+    // Parent pipe closed — suppress EPIPE
+  }
 }
 
 function log(msg) {
-  process.stderr.write(`[sidecar] ${msg}\n`);
+  try {
+    process.stderr.write(`[sidecar] ${msg}\n`);
+  } catch {
+    // stderr closed — suppress EPIPE
+  }
   emit({ type: 'log', message: msg });
 }
+
+// Prevent EPIPE crashes when parent pipes close
+process.stdout.on('error', () => {});
+process.stderr.on('error', () => {});
 
 function getLanIp() {
   const nets = networkInterfaces();
@@ -98,8 +111,8 @@ function fetchJson(url) {
 // ── Identity ─────────────────────────────────────────────────────
 
 async function loadOrCreateIdentity(portConflict) {
-  if (portConflict) {
-    log('Port conflict — ephemeral identity');
+  if (IS_INCOGNITO || portConflict) {
+    log(IS_INCOGNITO ? 'Incognito mode — ephemeral identity' : 'Port conflict — ephemeral identity');
     return { privateKey: await generateKeyPair('Ed25519'), isNew: false, isEphemeral: true };
   }
 

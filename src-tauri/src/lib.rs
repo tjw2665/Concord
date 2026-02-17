@@ -19,6 +19,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 static SIDECAR_CHILD: Mutex<Option<Child>> = Mutex::new(None);
 static SIDECAR_STDIN: Mutex<Option<ChildStdin>> = Mutex::new(None);
+static SIDECAR_INCOGNITO: Mutex<bool> = Mutex::new(false);
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ fn write_to_sidecar(cmd: &serde_json::Value) -> Result<(), String> {
 
 // ── Core sidecar start logic (called from setup hook) ────────────
 
-fn start_sidecar(app: tauri::AppHandle) -> Result<(), String> {
+fn start_sidecar(app: tauri::AppHandle, incognito: bool) -> Result<(), String> {
     kill_sidecar();
 
     // Breadcrumb for debugging
@@ -133,15 +134,26 @@ fn start_sidecar(app: tauri::AppHandle) -> Result<(), String> {
     // In dev: node_modules is in the project root (working_dir).
     let node_path = working_dir.join("node_modules");
 
-    let mut child = Command::new(&node)
-        .arg(&sidecar_script)
+    let mut cmd = Command::new(&node);
+    cmd.arg(&sidecar_script)
         .env("CONCORD_DATA_DIR", data_dir.to_string_lossy().as_ref())
         .env("NODE_PATH", node_path.to_string_lossy().as_ref())
         .current_dir(&working_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::from(log_file))
-        .creation_flags(CREATE_NO_WINDOW)
+        .creation_flags(CREATE_NO_WINDOW);
+
+    if incognito {
+        cmd.env("CONCORD_INCOGNITO", "1");
+    }
+
+    // Store incognito state for later queries
+    if let Ok(mut guard) = SIDECAR_INCOGNITO.lock() {
+        *guard = incognito;
+    }
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
 
@@ -234,6 +246,13 @@ fn p2p_dial(address: String) -> Result<(), String> {
     }))
 }
 
+/// Restart the sidecar with optional incognito mode.
+/// When incognito, the sidecar uses an ephemeral identity.
+#[tauri::command]
+fn restart_p2p(app: tauri::AppHandle, incognito: bool) -> Result<(), String> {
+    start_sidecar(app, incognito)
+}
+
 /// Read the sidecar stderr log for debugging.
 #[tauri::command]
 fn get_sidecar_log() -> Result<String, String> {
@@ -253,10 +272,13 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            // Auto-start the P2P sidecar when the app opens
+            // Auto-start the P2P sidecar when the app opens (normal mode).
+            // Short delay gives the frontend time to mount and attach event listeners
+            // so the initial `ready` and `invite_code` events are not missed.
             let handle = app.handle().clone();
             thread::spawn(move || {
-                if let Err(e) = start_sidecar(handle.clone()) {
+                thread::sleep(std::time::Duration::from_secs(2));
+                if let Err(e) = start_sidecar(handle.clone(), false) {
                     eprintln!("Sidecar start failed: {}", e);
                     let _ = handle.emit(
                         "p2p-event",
@@ -270,6 +292,7 @@ pub fn run() {
             p2p_send,
             p2p_dial,
             get_sidecar_log,
+            restart_p2p,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSpaceStore } from '../stores/spaceStore';
+import { useIncognitoStore } from '../stores/incognitoStore';
 import type { Space, SpaceChannel, SpaceKind } from '../types/spaces';
 
 interface LeftBarProps {
@@ -137,6 +138,7 @@ export function LeftBar({ connectionStatus, onAddSpace }: LeftBarProps) {
     addChannel,
     getSpace,
   } = useSpaceStore();
+  const isIncognito = useIncognitoStore((s) => s.isIncognito);
 
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showCreateSpace, setShowCreateSpace] = useState(false);
@@ -147,6 +149,9 @@ export function LeftBar({ connectionStatus, onAddSpace }: LeftBarProps) {
 
   const communities = spaces.filter((s) => s.kind === 'community');
   const personalSpaces = spaces.filter((s) => s.kind === 'personal');
+
+  // In incognito, only show the DMs space
+  const dmSpace = spaces.find((s) => s.id === 'dms');
 
   const handleSelectChannel = (channel: SpaceChannel) => {
     const space = spaces.find((s) => s.channels.some((c) => c.id === channel.id));
@@ -181,99 +186,138 @@ export function LeftBar({ connectionStatus, onAddSpace }: LeftBarProps) {
     <aside className="w-full min-w-0 flex flex-col overflow-hidden bg-concord-bg-tertiary">
       {/* Header */}
       <div className="h-12 flex-shrink-0 px-3 flex items-center justify-between border-b border-[var(--border)]">
-        <h2 className="font-semibold text-concord-text-primary truncate">Spaces</h2>
-        <div className="relative">
-          <button
-            onClick={() => setShowAddMenu(!showAddMenu)}
-            className="p-1.5 rounded-md hover:bg-concord-bg-secondary text-concord-text-secondary hover:text-concord-text-primary transition-colors"
-            title="Add space or channel"
-            aria-label="Add"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-          {showAddMenu && (
-            <>
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setShowAddMenu(false)}
-                aria-hidden
-              />
-              <div className="absolute right-0 top-full mt-1 py-1 w-48 bg-concord-bg-secondary rounded-lg shadow-xl border border-[var(--border)] z-20">
-                <button
-                  onClick={() => {
-                    setShowAddMenu(false);
-                    setNewSpaceKind('community');
-                    setShowCreateSpace(true);
-                  }}
-                  className="w-full px-3 py-2 text-left text-sm text-concord-text-primary hover:bg-concord-bg-tertiary flex items-center gap-2"
-                >
-                  <span>🏛️</span> Create Community
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAddMenu(false);
-                    setNewSpaceKind('personal');
-                    setShowCreateSpace(true);
-                  }}
-                  className="w-full px-3 py-2 text-left text-sm text-concord-text-primary hover:bg-concord-bg-tertiary flex items-center gap-2"
-                >
-                  <span>🔒</span> Create Personal Space
-                </button>
-                {activeSpaceId && getSpace(activeSpaceId)?.id !== 'home' && getSpace(activeSpaceId)?.id !== 'dms' && (
+        <h2 className="font-semibold text-concord-text-primary truncate">
+          {isIncognito ? (
+            <span className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+              </svg>
+              Incognito
+            </span>
+          ) : 'Spaces'}
+        </h2>
+        {!isIncognito && (
+          <div className="relative">
+            <button
+              onClick={() => setShowAddMenu(!showAddMenu)}
+              className="p-1.5 rounded-md hover:bg-concord-bg-secondary text-concord-text-secondary hover:text-concord-text-primary transition-colors"
+              title="Add space or channel"
+              aria-label="Add"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            {showAddMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowAddMenu(false)}
+                  aria-hidden
+                />
+                <div className="absolute right-0 top-full mt-1 py-1 w-48 bg-concord-bg-secondary rounded-lg shadow-xl border border-[var(--border)] z-20">
                   <button
                     onClick={() => {
                       setShowAddMenu(false);
-                      setShowCreateChannel(true);
+                      setNewSpaceKind('community');
+                      setShowCreateSpace(true);
                     }}
-                    className="w-full px-3 py-2 text-left text-sm text-concord-text-primary hover:bg-concord-bg-tertiary flex items-center gap-2 border-t border-[var(--border)]"
+                    className="w-full px-3 py-2 text-left text-sm text-concord-text-primary hover:bg-concord-bg-tertiary flex items-center gap-2"
                   >
-                    <span>#</span> Create Channel
+                    <span>🏛️</span> Create Community
                   </button>
-                )}
-              </div>
-            </>
-          )}
-        </div>
+                  <button
+                    onClick={() => {
+                      setShowAddMenu(false);
+                      setNewSpaceKind('personal');
+                      setShowCreateSpace(true);
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-concord-text-primary hover:bg-concord-bg-tertiary flex items-center gap-2"
+                  >
+                    <span>🔒</span> Create Personal Space
+                  </button>
+                  {activeSpaceId && getSpace(activeSpaceId)?.id !== 'home' && getSpace(activeSpaceId)?.id !== 'dms' && (
+                    <button
+                      onClick={() => {
+                        setShowAddMenu(false);
+                        setShowCreateChannel(true);
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm text-concord-text-primary hover:bg-concord-bg-tertiary flex items-center gap-2 border-t border-[var(--border)]"
+                    >
+                      <span>#</span> Create Channel
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Space list */}
       <div className="flex-1 overflow-y-auto p-2">
-        {communities.length > 0 && (
-          <div className="mb-4">
-            <div className="px-2 py-1 text-[10px] font-semibold text-concord-text-secondary uppercase tracking-wider">
-              Communities
-            </div>
-            {communities.map((space) => (
-              <SpaceSection
-                key={space.id}
-                space={space}
-                isActiveSpace={activeSpaceId === space.id}
-                activeChannelId={activeSpaceId === space.id ? activeChannelId : null}
-                onSelectChannel={handleSelectChannel}
-                onToggleExpand={() => toggleSpaceExpanded(space.id)}
-              />
-            ))}
-          </div>
-        )}
-
-        {personalSpaces.length > 0 && (
+        {isIncognito ? (
+          /* Incognito: only show DMs */
           <div>
-            <div className="px-2 py-1 text-[10px] font-semibold text-concord-text-secondary uppercase tracking-wider">
-              Personal
+            <div className="px-2 py-1 text-[10px] font-semibold text-amber-400/80 uppercase tracking-wider">
+              Direct Messages
             </div>
-            {personalSpaces.map((space) => (
+            {dmSpace && (
               <SpaceSection
-                key={space.id}
-                space={space}
-                isActiveSpace={activeSpaceId === space.id}
-                activeChannelId={activeSpaceId === space.id ? activeChannelId : null}
+                space={dmSpace}
+                isActiveSpace={activeSpaceId === 'dms'}
+                activeChannelId={activeSpaceId === 'dms' ? activeChannelId : null}
                 onSelectChannel={handleSelectChannel}
-                onToggleExpand={() => toggleSpaceExpanded(space.id)}
+                onToggleExpand={() => toggleSpaceExpanded('dms')}
               />
-            ))}
+            )}
+            {(!dmSpace || dmSpace.channels.length === 0) && (
+              <div className="px-3 py-4 text-xs text-concord-text-secondary text-center">
+                No conversations yet.
+                <br />
+                Enter an invite code to connect.
+              </div>
+            )}
           </div>
+        ) : (
+          /* Normal mode: show all spaces */
+          <>
+            {communities.length > 0 && (
+              <div className="mb-4">
+                <div className="px-2 py-1 text-[10px] font-semibold text-concord-text-secondary uppercase tracking-wider">
+                  Communities
+                </div>
+                {communities.map((space) => (
+                  <SpaceSection
+                    key={space.id}
+                    space={space}
+                    isActiveSpace={activeSpaceId === space.id}
+                    activeChannelId={activeSpaceId === space.id ? activeChannelId : null}
+                    onSelectChannel={handleSelectChannel}
+                    onToggleExpand={() => toggleSpaceExpanded(space.id)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {personalSpaces.length > 0 && (
+              <div>
+                <div className="px-2 py-1 text-[10px] font-semibold text-concord-text-secondary uppercase tracking-wider">
+                  Personal
+                </div>
+                {personalSpaces.map((space) => (
+                  <SpaceSection
+                    key={space.id}
+                    space={space}
+                    isActiveSpace={activeSpaceId === space.id}
+                    activeChannelId={activeSpaceId === space.id ? activeChannelId : null}
+                    onSelectChannel={handleSelectChannel}
+                    onToggleExpand={() => toggleSpaceExpanded(space.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

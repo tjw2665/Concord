@@ -11,11 +11,13 @@ import {
   sendMessage as bridgeSend,
   dialPeer as bridgeDial,
   listenP2PEvents,
+  restartP2P as bridgeRestart,
   type P2PEvent,
 } from '../services/p2pBridge';
 import { initIdentity, sign } from '../services/identity';
 import { useMessageStore } from '../stores/messageStore';
 import { useSpaceStore } from '../stores/spaceStore';
+import { useIncognitoStore } from '../stores/incognitoStore';
 import { getKnownPeers, addKnownPeer, clearKnownPeers } from '../services/knownPeers';
 import type { Message } from '@concord/protocol';
 
@@ -60,8 +62,12 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
   const addMessage = useMessageStore((s) => s.addMessage);
   const startedRef = useRef(false);
   const userDialsRef = useRef(new Set<string>());
-  // Sidecar peerId stored in a ref so the event handler closure always has the latest value
+  // Refs so event handler closures always have the latest values
   const peerIdRef = useRef<string>('');
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  const inviteCodeRef = useRef(inviteCode);
+  inviteCodeRef.current = inviteCode;
 
   const log = useCallback((msg: string) => {
     const entry = `[${new Date().toLocaleTimeString()}] ${msg}`;
@@ -101,6 +107,7 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
 
     // ── Event handler ──────────────────────────────────────────
     let knownPeersReconnected = false;
+    const netLog = useIncognitoStore.getState().addNetworkLog;
 
     function handleP2PEvent(evt: P2PEvent) {
       // Log every event type (except noisy 'log' events) for debugging
@@ -121,6 +128,8 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
           log(`Local address: ${evt.address}`);
           if (evt.lanAddress) log(`LAN address: ${evt.lanAddress}`);
           if (evt.inviteCode) log(`Invite code: ${evt.inviteCode}`);
+          netLog({ direction: 'info', label: 'Node Ready', detail: `PeerId: ${evt.peerId.slice(0, 20)}… Port: ${evt.port}` });
+          if (evt.inviteCode) netLog({ direction: 'info', label: 'Invite Code', detail: evt.inviteCode });
 
           // Auto-reconnect known peers (once)
           if (!knownPeersReconnected) {
@@ -157,9 +166,15 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
             const msg = JSON.parse(raw) as Message;
             log(`MSG-add id=${msg.id.slice(0, 16)} author=${msg.authorId.slice(0, 12)} content="${msg.content.slice(0, 30)}"`);
 
-            // If this is a DM message and we don't have a channel for it,
-            // auto-create one so the user sees the conversation
+            // For DM messages: remap the channel ID.
+            // The sender sends on channel "dm:<receiver_peer_id>" (targeting us).
+            // But our UI displays the conversation under "dm:<sender_peer_id>".
+            // So we remap to the sender's peer ID for correct display.
+            let targetChannel = incomingChannel;
             if (incomingChannel.startsWith('dm:') && fromPeer) {
+              targetChannel = `dm:${fromPeer}`;
+              log(`DM remap: ${incomingChannel.slice(0, 30)} → ${targetChannel.slice(0, 30)}`);
+
               const store = useSpaceStore.getState();
               if (!store.getDmChannelByPeerId(fromPeer)) {
                 store.addDmChannel(fromPeer);
@@ -167,7 +182,7 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
               }
             }
 
-            addMessage(incomingChannel, msg);
+            addMessage(targetChannel, msg);
           } catch (parseErr) {
             log(`MSG-parse-error: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
           }
@@ -177,16 +192,19 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
         case 'peer:connect':
           setConnectedPeers(evt.peers ?? []);
           log(`Peer connected: ${evt.peerId.slice(0, 16)}...`);
+          netLog({ direction: 'in', label: 'Peer Connect', detail: `${evt.peerId.slice(0, 20)}… (${(evt.peers ?? []).length} total)` });
           break;
 
         case 'peer:disconnect':
           setConnectedPeers(evt.peers ?? []);
           log(`Peer disconnected: ${evt.peerId.slice(0, 16)}...`);
+          netLog({ direction: 'info', label: 'Peer Disconnect', detail: `${evt.peerId.slice(0, 20)}… (${(evt.peers ?? []).length} remaining)` });
           break;
 
         case 'invite_code':
           setInviteCode((evt as any).code);
           log(`Invite code received: ${(evt as any).code}`);
+          netLog({ direction: 'in', label: 'Invite Code', detail: (evt as any).code });
           break;
 
         case 'dial_result': {
@@ -196,6 +214,7 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
             log(`Dial succeeded: ${evt.address.slice(0, 50)}...`);
             addKnownPeer(evt.address);
             if (evt.peers) setConnectedPeers(evt.peers);
+            netLog({ direction: 'in', label: 'Dial OK', detail: `${evt.address} → peer ${(evt.peerId ?? '?').slice(0, 16)}` });
 
             // If the dial resolved a remote peerId (invite code flow), auto-create DM
             if (evt.peerId) {
@@ -208,6 +227,7 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
           } else {
             const errMsg = evt.error ?? 'Unknown dial error';
             log(`Dial failed: ${errMsg}`);
+            netLog({ direction: 'error', label: 'Dial Fail', detail: `${evt.address}: ${errMsg}` });
             if (wasUserDial) {
               setError(errMsg);
             }
@@ -215,25 +235,56 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
           break;
         }
 
-        case 'net_stats':
-          setNetStats(evt as unknown as NetStats);
+        case 'net_stats': {
+          const ns = evt as unknown as NetStats & { inviteCode?: string };
+          setNetStats(ns);
           // Sync peer count from sidecar (WebRTC connections are persistent)
           if (evt.peers && Array.isArray(evt.peers)) {
             setConnectedPeers(evt.peers);
           }
+          // If we missed the initial 'ready' event (sidecar started before
+          // the frontend listener was attached), recover from net_stats.
+          if (statusRef.current === 'connecting' && ns.listenPort) {
+            log('Recovered ready state from net_stats');
+            setStatus('ready');
+            setError(null);
+            netLog({ direction: 'info', label: 'Node Ready', detail: `Recovered from net_stats (port ${ns.listenPort})` });
+          }
+          if (ns.inviteCode && !inviteCodeRef.current) {
+            setInviteCode(ns.inviteCode);
+            netLog({ direction: 'in', label: 'Invite Code', detail: ns.inviteCode });
+          }
           break;
+        }
 
         case 'error':
           setError(evt.message);
           log(`Error: ${evt.message}`);
+          netLog({ direction: 'error', label: 'Error', detail: evt.message });
           if (evt.message.includes('exited') || evt.message.includes('read error')) {
             setStatus('error');
           }
           break;
 
-        case 'log':
+        case 'log': {
           log(evt.message);
+          // Feed sidecar logs into network log for relay/connection visibility
+          const m = evt.message;
+          if (m.includes('Relay info:')) {
+            netLog({ direction: 'in', label: 'Relay Info', detail: m.replace('[sidecar] ', '') });
+          } else if (m.includes('Invite code:')) {
+            netLog({ direction: 'in', label: 'Relay Register', detail: m.replace('[sidecar] ', '') });
+          } else if (m.includes('send:')) {
+            netLog({ direction: 'out', label: 'Send', detail: m.replace('[sidecar] ', '') });
+          } else if (m.includes('recv:')) {
+            netLog({ direction: 'in', label: 'Recv', detail: m.replace('[sidecar] ', '') });
+          } else if (m.includes('Resolved code') || m.includes('WebRTC') || m.includes('Signaling') || m.includes('Waiting for')) {
+            netLog({ direction: 'info', label: 'WebRTC', detail: m.replace('[sidecar] ', '') });
+          } else if (m.includes('Reconnect') || m.includes('relay')) {
+            netLog({ direction: 'info', label: 'Relay', detail: m.replace('[sidecar] ', '') });
+          }
           break;
+        }
 
         default:
           break;
@@ -274,8 +325,43 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
         ? channelId.slice(3)
         : undefined;
       await bridgeSend(channelId, JSON.stringify(msg), targetPeerId);
+      useIncognitoStore.getState().addNetworkLog({
+        direction: 'out',
+        label: 'Message',
+        detail: `ch=${channelId.slice(0, 20)} → "${content.slice(0, 40)}"${targetPeerId ? ` (DM ${targetPeerId.slice(0, 12)})` : ' (broadcast)'}`,
+      });
     },
     [channelId, addMessage]
+  );
+
+  // ── Restart sidecar (for incognito toggle) ─────────────────────
+  const restartSidecar = useCallback(
+    async (incognito: boolean) => {
+      setStatus('connecting');
+      setError(null);
+      setPeerId('');
+      setShortId('');
+      setMyAddress(null);
+      setLanAddress(null);
+      setInviteCode(null);
+      setConnectedPeers([]);
+      useIncognitoStore.getState().clearNetworkLogs();
+      useIncognitoStore.getState().addNetworkLog({
+        direction: 'info',
+        label: 'Restart',
+        detail: incognito ? 'Switching to incognito mode (ephemeral identity)' : 'Switching to normal mode',
+      });
+      log(incognito ? 'Restarting sidecar in incognito mode...' : 'Restarting sidecar in normal mode...');
+      try {
+        await bridgeRestart(incognito);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        setStatus('error');
+        log(`Restart failed: ${msg}`);
+      }
+    },
+    [log]
   );
 
   // ── Connect to peer (manual — supports invite codes and multiaddrs) ───
@@ -325,6 +411,7 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
     inviteCode,
     debugLog,
     netStats,
+    restartSidecar,
   };
 }
 

@@ -87,6 +87,11 @@ export async function dialPeer(address: string): Promise<void> {
   await invoke('p2p_dial', { address });
 }
 
+/** Restart the sidecar, optionally in incognito mode (ephemeral identity). */
+export async function restartP2P(incognito: boolean): Promise<void> {
+  await invoke('restart_p2p', { incognito });
+}
+
 /** Read the sidecar's stderr log file. */
 export async function getSidecarLog(): Promise<string> {
   try {
