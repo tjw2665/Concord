@@ -571,19 +571,38 @@ try {
                 await node.dial(multiaddr(dialAddr));
                 log(`WebRTC connection established for: ${addr}`);
               } catch (dialErr) {
-                // WebRTC signaling closes the circuit stream when done, which
-                // can throw an EOF error. Check if we actually connected.
-                const isEOF = dialErr.message?.includes('EOF') ||
-                              dialErr.message?.includes('stream closed');
-                const connected = node.getPeers().some(p => p.toString() === lookup.peerId);
+                // WebRTC signaling uses the circuit relay stream, which closes
+                // after the SDP handshake completes. This EOF/stream-closed error
+                // is NORMAL — the WebRTC data channel may still be establishing
+                // in the background. Wait and check for the connection.
+                const isSignalingEOF = dialErr.message?.includes('EOF') ||
+                              dialErr.message?.includes('stream closed') ||
+                              dialErr.message?.includes('RESET');
 
-                if (isEOF && connected) {
-                  log(`WebRTC established for ${addr} (signaling stream closed normally)`);
-                } else if (connected) {
-                  log(`Connected to ${addr} despite error: ${dialErr.message}`);
+                if (isSignalingEOF) {
+                  log(`Signaling stream closed for ${addr} (expected) — waiting for WebRTC...`);
+
+                  // Poll for the WebRTC connection with increasing delays
+                  let connected = false;
+                  for (const delay of [1000, 2000, 3000, 4000]) {
+                    await new Promise(r => setTimeout(r, delay));
+                    connected = node.getPeers().some(p => p.toString() === lookup.peerId);
+                    if (connected) {
+                      log(`WebRTC established for ${addr} after ${delay}ms wait`);
+                      break;
+                    }
+                    log(`Waiting for WebRTC... (${delay}ms elapsed)`);
+                  }
+
+                  if (!connected) {
+                    log(`WebRTC did not establish for ${addr} after retries`);
+                    emit({ type: 'dial_result', ok: false, address: addr, error: 'Connection timed out — peer may be offline or NAT is too restrictive.' });
+                    break;
+                  }
                 } else {
+                  // Genuine dial failure (not signaling EOF)
                   log(`Dial failed for ${addr}: ${dialErr.message}`);
-                  emit({ type: 'dial_result', ok: false, address: addr, error: `Connection failed: ${dialErr.message}. Your NAT may not support direct connections.` });
+                  emit({ type: 'dial_result', ok: false, address: addr, error: `Connection failed: ${dialErr.message}` });
                   break;
                 }
               }
