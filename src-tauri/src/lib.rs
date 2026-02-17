@@ -127,9 +127,16 @@ fn start_sidecar(app: tauri::AppHandle) -> Result<(), String> {
     // Pass the app data directory so the sidecar can persist identity there
     let data_dir = app_data_dir()?;
 
+    // NODE_PATH tells Node.js where to find native addons (node-datachannel)
+    // that are marked external in the esbuild bundle.
+    // In production: node_modules is next to the exe (copied by bundle script).
+    // In dev: node_modules is in the project root (working_dir).
+    let node_path = working_dir.join("node_modules");
+
     let mut child = Command::new(&node)
         .arg(&sidecar_script)
         .env("CONCORD_DATA_DIR", data_dir.to_string_lossy().as_ref())
+        .env("NODE_PATH", node_path.to_string_lossy().as_ref())
         .current_dir(&working_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

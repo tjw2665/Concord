@@ -217,7 +217,7 @@ export function useP2P(channelId: string = DEFAULT_CHANNEL) {
 
         case 'net_stats':
           setNetStats(evt as unknown as NetStats);
-          // Keep connected peers in sync with known chat peers from sidecar
+          // Sync peer count from sidecar (WebRTC connections are persistent)
           if (evt.peers && Array.isArray(evt.peers)) {
             setConnectedPeers(evt.peers);
           }
