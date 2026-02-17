@@ -72,7 +72,7 @@ function getLanIp() {
   return null;
 }
 
-// ── HTTP fetch helper (no external deps) ────────────────────────
+// ── HTTP helpers (no external deps) ──────────────────────────────
 
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
@@ -91,6 +91,40 @@ function fetchJson(url) {
     req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout fetching ${url}`)); });
   });
 }
+
+function postJson(url, data) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(data);
+    const parsed = new URL(url);
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      timeout: 10000,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    };
+    const req = https.request(options, (res) => {
+      let rbody = '';
+      res.on('data', (chunk) => { rbody += chunk; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(rbody)); }
+        catch { reject(new Error(`Invalid JSON: ${rbody.slice(0, 200)}`)); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Post timeout')); });
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── Known chat peers (tracks peers we should send messages to) ───
+// peerId string -> true
+const knownChatPeers = new Set();
 
 // ── Identity ─────────────────────────────────────────────────────
 
@@ -212,48 +246,100 @@ const stats = { sent: 0, sendFail: 0, recv: 0, recvFail: 0 };
 // ── Direct chat protocol ─────────────────────────────────────────
 
 /**
- * Send a message to a single peer by opening a stream, writing
- * one line of JSON, and closing.
+ * Send a message to a single peer via the relay HTTP message queue.
+ * This is reliable — messages are stored on the relay and polled by the recipient.
  */
-async function sendToPeer(node, peerId, payload) {
-  const pid = peerId.toString().slice(0, 16);
-  log(`send: opening stream to ${pid} protocol=${CHAT_PROTOCOL}`);
-  // runOnLimitedConnection: true — required for circuit relay connections
-  const stream = await node.dialProtocol(peerId, CHAT_PROTOCOL, {
-    runOnLimitedConnection: true,
-  });
-  const bytes = fromString(payload + '\n');
-  log(`send: writing ${bytes.length} bytes to ${pid}`);
-
-  // libp2p v3 stream API: use stream.send() then stream.close()
-  stream.send(bytes);
-  await stream.close();
-  stats.sent++;
-  log(`send: stream closed OK to ${pid} (total sent: ${stats.sent})`);
+async function sendViaRelay(fromPeerId, toPeerId, channelId, data) {
+  const pid = toPeerId.slice(0, 16);
+  log(`relay-send: ${fromPeerId.slice(0, 12)} -> ${pid} ch=${channelId}`);
+  try {
+    await postJson(`${RELAY_HTTP_URL}/send`, {
+      to: toPeerId,
+      from: fromPeerId,
+      channelId,
+      data,
+    });
+    stats.sent++;
+    log(`relay-send: OK -> ${pid} (total sent: ${stats.sent})`);
+  } catch (e) {
+    stats.sendFail++;
+    log(`relay-send: FAIL -> ${pid}: ${e.message}`);
+  }
 }
 
 /**
- * Send a message to every connected peer. Fire-and-forget per peer.
+ * Send a message to a single peer. Tries direct libp2p stream first (for LAN peers),
+ * falls back to relay HTTP forwarding for NAT'd peers.
  */
-async function sendToAllPeers(node, payload, relayId) {
-  // Filter out the relay peer — it doesn't support the chat protocol
-  const peers = node.getPeers().filter(p => !relayId || p.toString() !== relayId);
-  if (peers.length === 0) {
-    log('send: no connected chat peers');
+async function sendToPeer(node, peerId, payload, myPeerId) {
+  const pidStr = peerId.toString();
+  const pid = pidStr.slice(0, 16);
+
+  // Try direct libp2p stream first (works for LAN peers)
+  const isDirectlyConnected = node.getPeers().some(p => p.toString() === pidStr);
+  if (isDirectlyConnected) {
+    try {
+      log(`send-direct: opening stream to ${pid}`);
+      const stream = await node.dialProtocol(peerId, CHAT_PROTOCOL, {
+        runOnLimitedConnection: true,
+      });
+      const bytes = fromString(payload + '\n');
+      stream.send(bytes);
+      await stream.close();
+      stats.sent++;
+      log(`send-direct: OK -> ${pid}`);
+      return;
+    } catch (e) {
+      log(`send-direct: failed -> ${pid}: ${e.message}, falling back to relay`);
+    }
+  }
+
+  // Fall back to relay HTTP message queue
+  try {
+    const parsed = JSON.parse(payload);
+    await sendViaRelay(myPeerId, pidStr, parsed.channelId || DEFAULT_CHANNEL, payload);
+  } catch (e) {
+    stats.sendFail++;
+    log(`send: FAIL -> ${pid}: ${e.message}`);
+  }
+}
+
+/**
+ * Send a message to every known chat peer. Uses relay forwarding for NAT'd peers.
+ */
+async function sendToAllPeers(node, payload, relayId, myPeerId) {
+  // Combine currently connected peers and known chat peers
+  const connectedPeerIds = node.getPeers()
+    .filter(p => !relayId || p.toString() !== relayId)
+    .map(p => p.toString());
+  const allTargets = new Set([...connectedPeerIds, ...knownChatPeers]);
+  // Remove relay from targets
+  if (relayId) allTargets.delete(relayId);
+  // Remove self
+  if (myPeerId) allTargets.delete(myPeerId);
+
+  if (allTargets.size === 0) {
+    log('send: no known chat peers');
     return;
   }
-  log(`send: broadcasting to ${peers.length} chat peer(s)`);
+  log(`send: broadcasting to ${allTargets.size} peer(s) (${connectedPeerIds.length} direct, ${knownChatPeers.size} known)`);
+
   const results = await Promise.allSettled(
-    peers.map((p) => sendToPeer(node, p, payload))
+    [...allTargets].map(async (pidStr) => {
+      const peerObj = node.getPeers().find(p => p.toString() === pidStr);
+      if (peerObj) {
+        return sendToPeer(node, peerObj, payload, myPeerId);
+      } else {
+        // Not directly connected — use relay
+        const parsed = JSON.parse(payload);
+        return sendViaRelay(myPeerId, pidStr, parsed.channelId || DEFAULT_CHANNEL, payload);
+      }
+    })
   );
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    const pid = peers[i].toString().slice(0, 16);
-    if (r.status === 'fulfilled') {
-      log(`send: OK -> ${pid}`);
-    } else {
-      stats.sendFail++;
-      log(`send: FAIL -> ${pid}: ${r.reason?.message ?? r.reason}`);
+
+  for (const r of results) {
+    if (r.status === 'rejected') {
+      log(`send: broadcast error: ${r.reason?.message ?? r.reason}`);
     }
   }
 }
@@ -414,10 +500,60 @@ try {
     setTimeout(registerInviteCode, 3000);
   }
 
+  // ── Relay message polling ───────────────────────────────────────
+  let lastPollTs = Date.now();
+  let pollErrors = 0;
+
+  async function pollRelayMessages() {
+    if (!relayPeerId) return;
+    try {
+      const result = await fetchJson(`${RELAY_HTTP_URL}/poll?peerId=${encodeURIComponent(peerId)}&since=0`);
+      pollErrors = 0;
+      if (result.messages && result.messages.length > 0) {
+        log(`poll: received ${result.messages.length} message(s) from relay`);
+        for (const msg of result.messages) {
+          stats.recv++;
+          // The 'data' field contains the full JSON-stringified message payload
+          try {
+            const parsed = JSON.parse(msg.data);
+            emit({
+              type: 'message',
+              channelId: parsed.channelId || msg.channelId || DEFAULT_CHANNEL,
+              data: parsed.data,
+              from: msg.from,
+            });
+          } catch {
+            // If data isn't double-encoded, emit as-is
+            emit({
+              type: 'message',
+              channelId: msg.channelId || DEFAULT_CHANNEL,
+              data: msg.data,
+              from: msg.from,
+            });
+          }
+        }
+      }
+      lastPollTs = Date.now();
+    } catch (e) {
+      pollErrors++;
+      if (pollErrors <= 3) {
+        log(`poll: error (${pollErrors}): ${e.message}`);
+      }
+    }
+  }
+
+  // Poll every 1.5 seconds for low latency
+  const pollInterval = setInterval(pollRelayMessages, 1500);
+
   // ── Peer events ────────────────────────────────────────────────
   node.addEventListener('peer:connect', (evt) => {
     const pid = evt.detail.toString();
     log(`Peer connected: ${pid}`);
+    // Track non-relay peers as known chat peers
+    if (pid !== relayPeerId) {
+      knownChatPeers.add(pid);
+      log(`Added ${pid.slice(0, 16)} to known chat peers (total: ${knownChatPeers.size})`);
+    }
     emit({ type: 'peer:connect', peerId: pid, peers: node.getPeers().map(String) });
   });
 
@@ -505,20 +641,18 @@ try {
             try {
               const targetPeer = node.getPeers().find(p => p.toString() === cmd.targetPeerId);
               if (targetPeer) {
-                await sendToPeer(node, targetPeer, payload);
+                await sendToPeer(node, targetPeer, payload, peerId);
               } else {
-                // Peer not currently connected — try dialing by PeerId
-                // (libp2p will use the peer store to find known addresses)
-                log(`send: target peer not in connected list, attempting dialProtocol directly`);
-                const pid = peerIdFromString(cmd.targetPeerId);
-                await sendToPeer(node, pid, payload);
+                // Not directly connected — use relay HTTP forwarding
+                log(`send: target not connected, forwarding via relay`);
+                await sendViaRelay(peerId, cmd.targetPeerId, channelId, payload);
               }
             } catch (e) {
               log(`send: targeted send failed: ${e.message}`);
             }
           } else {
-            // Broadcast to all connected peers (group channel behavior)
-            await sendToAllPeers(node, payload, relayPeerId);
+            // Broadcast to all known chat peers
+            await sendToAllPeers(node, payload, relayPeerId, peerId);
           }
           break;
         }
@@ -535,15 +669,23 @@ try {
                 emit({ type: 'dial_result', ok: false, address: addr, error: 'Code not found or expired' });
                 break;
               }
-              log(`Resolved code ${addr} -> ${lookup.circuitAddr}`);
-              await node.dial(multiaddr(lookup.circuitAddr));
-              log(`Connected via invite code: ${addr}`);
+              log(`Resolved code ${addr} -> peerId=${lookup.peerId}`);
+              // Add to known chat peers immediately (relay circuit connections are short-lived)
+              knownChatPeers.add(lookup.peerId);
+              log(`Added ${lookup.peerId.slice(0, 16)} to known chat peers via invite code`);
+              // Try to establish circuit connection (for identify/discovery)
+              try {
+                await node.dial(multiaddr(lookup.circuitAddr));
+                log(`Circuit connection established for: ${addr}`);
+              } catch (dialErr) {
+                log(`Circuit dial failed (OK — relay forwarding will be used): ${dialErr.message}`);
+              }
               emit({
                 type: 'dial_result',
                 ok: true,
                 address: addr,
                 peerId: lookup.peerId,
-                peers: node.getPeers().map(String),
+                peers: [...new Set([...node.getPeers().map(String), lookup.peerId])],
               });
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);

@@ -1,13 +1,14 @@
 /**
  * Concord Relay Server
  *
- * A lightweight libp2p circuit relay that:
- *  1. Forwards connections between NAT'd peers (circuit relay v2)
- *  2. Provides a simple HTTP API for short invite code registration/lookup
+ * A lightweight libp2p relay that:
+ *  1. Circuit relay v2 for peer discovery / reservation
+ *  2. HTTP API for invite code registration/lookup
+ *  3. HTTP message queue for reliable message forwarding between NAT'd peers
  *
  * Ports:
  *   9090 — WebSocket (libp2p relay)
- *   8080 — HTTP API  (invite codes + health check)
+ *   8080 — HTTP API  (invite codes + health check + message queue)
  */
 import http from 'node:http';
 import { createLibp2p } from 'libp2p';
@@ -75,6 +76,46 @@ function cleanupExpired() {
 }
 
 setInterval(cleanupExpired, CLEANUP_INTERVAL_MS);
+
+// ── Message queue ────────────────────────────────────────────────
+// peerId -> [ { from, channelId, data, ts } ]
+const messageQueues = new Map();
+const MSG_TTL_MS = 5 * 60 * 1000; // messages expire after 5 minutes
+const MSG_MAX_PER_PEER = 200;
+
+function enqueueMessage(toPeerId, fromPeerId, channelId, data) {
+  if (!messageQueues.has(toPeerId)) {
+    messageQueues.set(toPeerId, []);
+  }
+  const queue = messageQueues.get(toPeerId);
+  queue.push({ from: fromPeerId, channelId, data, ts: Date.now() });
+  // Trim old messages
+  while (queue.length > MSG_MAX_PER_PEER) queue.shift();
+}
+
+function dequeueMessages(peerId, since = 0) {
+  const queue = messageQueues.get(peerId);
+  if (!queue || queue.length === 0) return [];
+  const now = Date.now();
+  // Filter expired and already-seen messages
+  const fresh = queue.filter(m => m.ts > since && (now - m.ts) < MSG_TTL_MS);
+  // Clear delivered messages
+  messageQueues.set(peerId, []);
+  return fresh;
+}
+
+// Clean up stale queues periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [pid, queue] of messageQueues) {
+    const live = queue.filter(m => (now - m.ts) < MSG_TTL_MS);
+    if (live.length === 0) {
+      messageQueues.delete(pid);
+    } else {
+      messageQueues.set(pid, live);
+    }
+  }
+}, 60_000);
 
 // ── libp2p relay node ───────────────────────────────────────────
 
@@ -157,6 +198,36 @@ const httpServer = http.createServer((req, res) => {
     if (!entry) return jsonResponse(res, 404, { error: 'Code not found or expired' });
     const circuitAddr = `${externalRelayAddr}/p2p-circuit/p2p/${entry.peerId}`;
     return jsonResponse(res, 200, { peerId: entry.peerId, relayAddr: externalRelayAddr, circuitAddr });
+  }
+
+  // ── Message forwarding ────────────────────────────────────────
+  // POST /send — enqueue a message for a peer
+  if (path === '/send' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const msg = JSON.parse(body);
+        if (!msg.to || !msg.from || !msg.channelId || msg.data === undefined) {
+          return jsonResponse(res, 400, { error: 'Missing fields: to, from, channelId, data' });
+        }
+        enqueueMessage(msg.to, msg.from, msg.channelId, msg.data);
+        console.log(`MSG: ${msg.from.slice(0, 12)} -> ${msg.to.slice(0, 12)} ch=${msg.channelId}`);
+        return jsonResponse(res, 200, { ok: true });
+      } catch (e) {
+        return jsonResponse(res, 400, { error: 'Invalid JSON' });
+      }
+    });
+    return;
+  }
+
+  // GET /poll?peerId=X&since=timestamp — fetch queued messages
+  if (path === '/poll') {
+    const peerId = url.searchParams.get('peerId');
+    if (!peerId) return jsonResponse(res, 400, { error: 'Missing peerId' });
+    const since = parseInt(url.searchParams.get('since') || '0', 10);
+    const messages = dequeueMessages(peerId, since);
+    return jsonResponse(res, 200, { messages });
   }
 
   // Relay info (public)
